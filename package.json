@@ -1,0 +1,32 @@
+{
+  "name": "turbo-kart-rally",
+  "version": "1.0.0",
+  "description": "**An arcade kart racer in the spirit of Mario Kart, built entirely with Three.js. Every mesh, texture, sound effect and music track is generated in code at load time. There are no asset files and no build step.**",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bridge-mind/turbo-kart-rally.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/bridge-mind/turbo-kart-rally/issues"
+  },
+  "homepage": "https://github.com/bridge-mind/turbo-kart-rally#readme",
+  "dependencies": {
+    "three": "^0.170.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "playwright": "^1.63.0"
+  }
+}
