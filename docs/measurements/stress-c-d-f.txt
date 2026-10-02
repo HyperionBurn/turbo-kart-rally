@@ -1,0 +1,79 @@
+﻿### Test C: 40 connections, 30 s
+
+=== stress summary ===
+clients:            40 (34 spectating: lobby full)
+duration:           30.4 s
+input rate:         261.2 packets/s total, 6.5 per client
+RTT p50 / p95 / p99:1 / 2 / 3 ms
+jitter (mean |╬ö|):  0.07 ms
+ping samples:       4680
+mode:               normal
+client flow:        racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing,racing
+client teams:       1,2,3,4,5,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+server flow:        racing
+HTTP /diagnostics after load: 200 in 3 ms
+### Test D1: 6 controllers + 20 ms delay / 5 ms jitter, 20 s
+fault injected on team(s) 1,2,3,4,5,6: delay:20 jitter 5
+
+=== stress summary ===
+clients:            6 (0 spectating: lobby full)
+duration:           20.4 s
+input rate:         254.7 packets/s total, 42.5 per client
+RTT p50 / p95 / p99:0 / 1 / 1 ms
+jitter (mean |╬ö|):  0.16 ms
+ping samples:       468
+mode:               normal
+client flow:        racing,racing,racing,racing,racing,racing
+client teams:       1,2,3,4,5,6
+server flow:        racing
+fault:              delay:20,jitter:5
+HTTP /diagnostics after load: 200 in 3 ms
+### Test D2: 6 controllers + 100 ms delay / 20 ms jitter, 20 s
+fault injected on team(s) 1,2,3,4,5,6: delay:100 jitter 20
+
+=== stress summary ===
+clients:            6 (0 spectating: lobby full)
+duration:           20.4 s
+input rate:         253.7 packets/s total, 42.3 per client
+RTT p50 / p95 / p99:0 / 1 / 1 ms
+jitter (mean |╬ö|):  0.12 ms
+ping samples:       472
+mode:               normal
+client flow:        racing,racing,racing,racing,racing,racing
+client teams:       1,2,3,4,5,6
+server flow:        racing
+fault:              delay:100,jitter:20
+HTTP /diagnostics after load: 200 in 3 ms
+### Test D3: team 3 paused 3 s mid-race
+fault injected on team(s) 3: pause:3
+
+=== stress summary ===
+clients:            6 (0 spectating: lobby full)
+duration:           15.4 s
+input rate:         253.6 packets/s total, 42.3 per client
+RTT p50 / p95 / p99:0 / 1 / 2 ms
+jitter (mean |╬ö|):  0.21 ms
+ping samples:       348
+mode:               normal
+client flow:        racing,racing,racing,racing,racing,racing
+client teams:       1,2,3,4,5,6
+server flow:        racing
+fault:              pause:3
+HTTP /diagnostics after load: 200 in 3 ms
+### Test F: disconnect + reconnect, 2 clients
+--- closing 2 controller(s) at 4 s
+reconnected team 1
+reconnected team 2
+
+=== stress summary ===
+clients:            2 (0 spectating: lobby full)
+duration:           12.0 s
+input rate:         0.0 packets/s total, 0.0 per client
+RTT p50 / p95 / p99:1 / 1 / 1 ms
+jitter (mean |╬ö|):  0.59 ms
+ping samples:       30
+mode:               normal + disconnect at 4s
+client flow:        lobby,lobby
+client teams:       1,2
+server flow:        lobby
+HTTP /diagnostics after load: 200 in 3 ms
