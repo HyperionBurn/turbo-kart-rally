@@ -93,6 +93,7 @@ export class Menu {
         <button class="btn primary big" id="btn-event">EVENT MODE · 6 PLAYERS</button>
         <button class="btn big" id="btn-solo">SOLO MODE</button>
       </div>
+      <div class="title-hint">EVENT MODE: the projector shows a QR code — six phones scan it and race.</div>
       <div class="title-foot">
         <span>© Turbo Kart Rally · original procedural game</span>
         <span class="kc">M</span> mute

@@ -3,6 +3,7 @@ import { bus } from './events.js';
 
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const d_place = (d) => (d && d.place ? d.place : 0);
 
 // ---------------------------------------------------------------------------------------------
 // Songs. Steps are 16th notes; 16 steps per bar. Melody entries: [step, midi, lengthInSteps].
@@ -152,6 +153,17 @@ export class AudioEngine {
     on('ui:move', () => this.uiClick(0));
     on('ui:confirm', () => this.uiClick(1));
     on('ui:back', () => this.uiClick(2));
+    // ---- event mode cues (original, procedural) --------------------------------------------
+    on('ev:join', () => { this.beep(523, 0.09, 'triangle', 0.16); this.beep(784, 0.14, 'triangle', 0.14); });
+    on('ev:leave', () => { this.beep(392, 0.1, 'triangle', 0.12); this.beep(262, 0.16, 'triangle', 0.1); });
+    on('ev:ready', (d) => { if (!d || d.ready !== false) { this.beep(659, 0.08, 'square', 0.14); this.beep(988, 0.16, 'square', 0.12); } else this.beep(330, 0.12, 'square', 0.1); });
+    on('ev:select', () => this.uiClick(0));
+    on('ev:locked', () => { this.beep(196, 0.12, 'sawtooth', 0.1); this.beep(147, 0.18, 'sawtooth', 0.08); });
+    on('ev:countdown', ({ n }) => this.beep(440, 0.18, 'square', 0.22));
+    on('ev:go', () => { this.beep(880, 0.5, 'square', 0.24); this.beep(1760, 0.4, 'sine', 0.08); });
+    on('ev:points', () => { this.beep(880 + (d_place(d) || 0) * 40, 0.1, 'triangle', 0.16); });
+    on('ev:reveal', () => this.finalLapJingle());
+    on('ev:champion', () => { this.fanfare(1); this.whoosh(0.8, 1.2); });
   }
 
   // ------------------------------------------------------------------ public controls

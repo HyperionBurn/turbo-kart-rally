@@ -328,6 +328,18 @@ function eventHandlers() {
       else if (act === 'remove') netClient.send({ type: 'hostRemove', teamId });
     },
     setSettings: (patch) => { if (netClient) netClient.send({ type: 'hostSettings', settings: patch }); },
+    champion: () => {
+      bus.emit('ev:champion', {});
+      if (world && world.effects && world.karts[0]) {
+        // confetti over the winning grid slot
+        safe('effects.champion', () => {
+          const k = world.karts[0];
+          const p = k.position.clone(); p.y += 5;
+          world.effects.burst('confetti', p, { kart: k });
+          world.effects.burst('confetti', p, { kart: k });
+        });
+      }
+    },
   };
 }
 
@@ -338,6 +350,7 @@ function setEventFlow(flow) {
   // the six driving HUDs only belong on screen while people are actually driving
   const driving = flow === 'countdown' || flow === 'racing';
   if (driving) splitHud.show(); else splitHud.hide();
+  startLights.off();
   const banner = uiRoot.querySelector('.event-banner');
   if (banner && !driving) banner.classList.remove('show');
   if (flow === 'lobby') eventUI.show('lobby');
@@ -360,11 +373,20 @@ bus.on('net:session', ({ state }) => {
   state.controllerUrl = location.origin + '/controller';
   if (eventUI) eventUI.setSession(state);
 });
+const prevSeen = new Map(); // teamId -> connection signature, for join/leave cues
 bus.on('net:lobby', ({ state }) => {
   eventLobby = state;
+  for (const t of state.teams) {
+    const sig = t.connected ? `c${t.sessionId}` : `d${t.sessionId}`;
+    const before = prevSeen.get(t.id);
+    if (before && before.startsWith('c') && sig.startsWith('d')) bus.emit('ev:leave', { teamId: t.id });
+    else if ((!before || before.startsWith('d')) && sig.startsWith('c')) bus.emit('ev:join', { teamId: t.id });
+    if (before !== sig) prevSeen.set(t.id, sig);
+    netOffsets.set(t.id, typeof t.offset === 'number' ? t.offset : 0);
+    if (t.ready && before !== sig) bus.emit('ev:ready', { teamId: t.id, ready: true });
+  }
   if (eventUI) eventUI.setLobby(state);
   syncDrivers();
-  for (const t of state.teams) netOffsets.set(t.id, typeof t.offset === 'number' ? t.offset : 0);
 });
 bus.on('net:pause', () => { /* reserved: per-team pause request */ });
 
@@ -422,7 +444,9 @@ function buildEventWorld() {
   const racers = Math.min(6, Math.max(1, teams.length));
   for (let i = 0; i < racers; i++) {
     const t = teams[i] || { id: i + 1, characterIdx: i, connected: false, ai: true };
-    const character = CHARACTERS[t.characterIdx % CHARACTERS.length];
+    const base = CHARACTERS[t.characterIdx % CHARACTERS.length];
+    // team livery: the character keeps its hat/driver/stats, the chassis wears the team colour
+    const character = t.color ? { ...base, color: hexToInt(t.color) } : base;
     const model = makeKartModel(character);
     const kart = new Kart({ scene: w.scene, track: w.track, character, isPlayer: false, index: i, model });
     kart.teamId = t.id;
@@ -562,6 +586,7 @@ function resume() {
 bus.on('race:go', () => {
   if (mode === 'event' && world && world.mode === 'event' && (eventPhase === 'countdown' || eventPhase === 'racing')) {
     eventPhase = 'racing'; setState('racing'); audio.playMusic('race');
+    startLights.off();
     flashEventBanner('GO!');
     return;
   }
@@ -570,7 +595,9 @@ bus.on('race:go', () => {
     audio.playMusic('race');
   }
 });
-bus.on('race:countdown', ({ n }) => { if (mode === 'event' && world && world.mode === 'event') flashEventBanner(String(n)); });
+bus.on('race:countdown', ({ n }) => {
+  if (mode === 'event' && world && world.mode === 'event') { flashEventBanner(String(n)); startLights.set(6 - n); }
+});
 bus.on('race:end', (d) => {
   if (!world || world.mode !== 'event') return;
   const results = (d && d.results) || world.race.computeResults();
@@ -583,6 +610,17 @@ function flashEventBanner(text) {
   el.textContent = text;
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
 }
+
+/** F1-style start lights for the event countdown (and a rocket start if you hold GAS). */
+const startLights = { el: null, set(n) {
+  if (!this.el) { this.el = document.createElement('div'); this.el.className = 'start-lights'; uiRoot.appendChild(this.el); }
+  if (this.el.children.length !== 5) {
+    this.el.innerHTML = '<div class="lights">' + Array.from({ length: 5 }, () => '<i></i>').join('') + '</div>';
+  }
+  const on = Math.max(0, Math.min(5, n));
+  [...this.el.querySelectorAll('.lights i')].forEach((el, i) => el.classList.toggle('on', i < on));
+  this.el.classList.toggle('on', true);
+}, off() { if (this.el) this.el.classList.remove('on'); } };
 
 function finishEventRace(results) {
   const rows = [];
@@ -617,6 +655,7 @@ function finishEventRace(results) {
   setEventFlow('results');
 }
 function teamName(id) { const t = (eventLobby && eventLobby.teams) || []; const f = t.find((x) => x.id === id); return f ? f.name : `Team ${id}`; }
+function hexToInt(h) { return typeof h === 'string' ? parseInt(h.replace('#', ''), 16) || 0x888888 : (h || 0x888888); }
 function teamColor(id) { const t = (eventLobby && eventLobby.teams) || []; const f = t.find((x) => x.id === id); return f ? f.color : '#888888'; }
 bus.on('race:finish', (d) => {
   if (!world || !d || !d.kart || !d.kart.isPlayer) return;
@@ -728,8 +767,16 @@ function simulate(w, dt) {
 
   if (eventRace) {
     // human inputs from the network; stale sessions fall back to neutral
+    const now = time;
     for (const kart of w.karts) {
       if (kart._ai || kart.teamId <= 0) continue;
+      const t = eventLobby && eventLobby.teams.find((x) => x.id === kart.teamId);
+      if (t && !t.connected) {
+        // a phone that dropped: keep the kart alive for a moment (its last input stays
+        // believable), then go neutral rather than holding the throttle forever
+        if (!kart._lostAt) kart._lostAt = now;
+        else if (now - kart._lostAt > 2) { kart.input = { ...NEUTRAL }; kart._lastNet = null; continue; }
+      } else kart._lostAt = 0;
       const st = netClient && netClient.applyInput(kart.teamId, kart);
       kart._lastNet = st;
     }

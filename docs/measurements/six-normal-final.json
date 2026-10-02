@@ -1,0 +1,103 @@
+{
+  "tag": "six-normal-final",
+  "clients": 6,
+  "durationSeconds": 30,
+  "viewport": "1280x720",
+  "fault": null,
+  "frantic": false,
+  "frameMs": {
+    "p50": 2628.6,
+    "p95": 2847.9,
+    "p99": 2847.9,
+    "max": 2847.9,
+    "mean": 2649.483333333333
+  },
+  "physicsMs": {
+    "p50": 0.8,
+    "p95": 1.4,
+    "p99": 1.4,
+    "max": 1.4,
+    "mean": 0.9416666666666668
+  },
+  "renderMs": {
+    "p50": 13.8,
+    "p95": 16,
+    "p99": 16,
+    "max": 16,
+    "mean": 13.741666666666667
+  },
+  "finalDebug": {
+    "mode": "event",
+    "eventPhase": "racing",
+    "state": "racing",
+    "preraceTimer": -5.338000000000001,
+    "worldMode": "event",
+    "splitCams": 6,
+    "racePhase": "racing",
+    "physicsMs": 0.7,
+    "renderMs": 14.2,
+    "fps": 0,
+    "longFrames": 18,
+    "tier": 2,
+    "radar": {
+      "frames": 18,
+      "frameMsEma": 4940.9
+    }
+  },
+  "net": {
+    "stats": {
+      "rtt": 0,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "jitter": 0,
+      "rate": 132,
+      "outOfOrder": 3220,
+      "dropped": 3220,
+      "disconnects": 0,
+      "reconnects": 0
+    },
+    "clockOffset": 0,
+    "connected": true,
+    "lobbyPing": [
+      {
+        "id": 1,
+        "ping": 1,
+        "p95": 1,
+        "jitter": 0
+      },
+      {
+        "id": 2,
+        "ping": 1,
+        "p95": 1,
+        "jitter": 0
+      },
+      {
+        "id": 3,
+        "ping": 1,
+        "p95": 1,
+        "jitter": 0
+      },
+      {
+        "id": 4,
+        "ping": 1,
+        "p95": 1,
+        "jitter": 0
+      },
+      {
+        "id": 5,
+        "ping": 1,
+        "p95": 1,
+        "jitter": 0
+      },
+      {
+        "id": 6,
+        "ping": 1,
+        "p95": 1,
+        "jitter": 0
+      }
+    ]
+  },
+  "stress": "",
+  "errors": []
+}

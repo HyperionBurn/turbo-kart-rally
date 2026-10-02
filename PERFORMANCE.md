@@ -27,14 +27,16 @@ the event laptop (see §7) before trusting them in either direction.
 
 ## 2. Frame, physics and render cost (six-player split screen)
 
-Measured with `node scripts/measure-host.cjs --clients 6 --duration 25 --tag six-normal`
-(host page driving, six synthetic controllers streaming 30 Hz input, `docs/measurements/six-normal.json`):
+Measured with `node scripts/measure-host.cjs --clients 6 --duration 30 --tag six-normal-final`
+(host page driving, six synthetic controllers streaming 30 Hz input,
+`docs/measurements/six-normal-final.json`; an earlier 25 s run, `six-normal.json`, gave
+2788 / 2965 / 2965 ms frame p50/p95/p99 with physics 1.3 / 4.0 / 4.0 ms):
 
 | metric | p50 | p95 | p99 | max |
 | --- | --- | --- | --- | --- |
-| frame time | 2788 ms | 2965 ms | 2965 ms | 2965 ms |
-| physics step (all 6 karts + items + race logic) | 1.3 ms | 4.0 ms | 4.0 ms | 4.0 ms |
-| render submit (6 × `setViewport`/`setScissor` + 6 `render()`) | 16.7 ms | 18.8 ms | 18.8 ms | 18.8 ms |
+| frame time | 2629 ms | 2848 ms | 2848 ms | 2848 ms |
+| physics step (all 6 karts + items + race logic) | 0.8 ms | 1.4 ms | 1.4 ms | 1.4 ms |
+| render submit (6 × `setViewport`/`setScissor` + 6 `render()`) | 13.8 ms | 16.0 ms | 16.0 ms | 16.0 ms |
 
 Same scene in **broadcast mode** (one full-screen camera, `docs/measurements/six-broadcast.json`):
 
@@ -45,10 +47,10 @@ Same scene in **broadcast mode** (one full-screen camera, `docs/measurements/six
 | render submit | 4.0 ms | 4.8 ms | 4.9 ms | 4.9 ms |
 
 **What this proves (and what it does not).** Split-screen cost scales with the number of
-viewports: 1 camera = 568 ms/frame, 6 cameras = 2788 ms/frame (4.9×) in software
+viewports: 1 camera = 568 ms/frame, 6 cameras = 2629 ms/frame (4.6×) in software
 rasterisation. The CPU-side work the game itself owns — physics for six karts with items,
-collisions, lap logic, input application and HUD updates — is **1.3 ms per 60 Hz tick
-(p95 4 ms)**, i.e. ~8 % of a 16.7 ms budget, leaving ~15 ms for rasterisation on real
+collisions, lap logic, input application and HUD updates — is **0.8 ms per 60 Hz tick
+(p95 1.4 ms)**, i.e. ~8 % of a 16.7 ms budget, leaving ~15 ms for rasterisation on real
 hardware. On a GPU that rasterises 1280×720 six times per frame at 60 fps, this is
 comfortably inside budget; the same measurement on a GPU-less machine shows exactly where
 the remaining time goes (rasterisation), which is the only conclusion this environment can
@@ -94,16 +96,23 @@ See `docs/measurements/stress-c-d-f.txt` for the raw summaries:
 - **Test C — 40 simultaneous WebSocket connections (30 s).** 6 clients hold slots and stream
   input; 34 connect as spectators. Lobby stayed responsive (`GET /diagnostics` answered in
   2–3 ms at the end of the run), RTT p95 = 2 ms, jitter 0.08 ms, no dropped connections.
-- **Test D — synthetic bad Wi-Fi.** The server can delay, jitter or stall the relay per team
-  from `/diagnostics` or `scripts/stress.cjs --fault …`. Measured with 20 ms/5 ms jitter,
-  100 ms/20 ms jitter, and a 3 s pause applied to a single team: RTT rises as injected while
-  the other teams are unaffected; the paused team's kart goes neutral and its HUD shows
-  RECONNECTING. Because the host keeps only the newest packet per team, delayed packets never
-  queue — stale packets are counted and dropped (visible in the F3 overlay).
+- **Test D — synthetic bad Wi-Fi.** The server can delay, jitter or stall the **input relay**
+  per team from `/diagnostics` or `scripts/stress.cjs --fault …`. Measured with 20 ms/5 ms
+  jitter, 100 ms/20 ms jitter, and a 3 s stall applied to a single team
+  (`docs/measurements/stress-c-d-f.txt`). Two things are worth being precise about:
+  the injection sits on the gameplay input path, **not** on the diagnostics ping path, so the
+  reported RTT stays low (that is the ping channel, by design, staying healthy) — the effect
+  shows up as added input age in the F3 overlay instead. With 100 ms/20 ms injected while six
+  controllers raced (`docs/measurements/six-fault-100ms.json`) the host produced **no errors**,
+  physics stayed at 1.1 ms p50 / 1.6 ms p95, and frame cost was unchanged versus the
+  fault-free run — degraded input, identical simulation. Stale packets are counted and
+  discarded (visible in the F3 overlay) rather than queued, which is the mechanism that keeps
+  a delayed phone from building a backlog.
 - **Test F — disconnect/reconnect.** `--disconnect-at 4` closes two controllers mid-race and
   reconnects them 0.5 s later; both reclaim a slot with a new `sessionId` while the race
-  continues. The Playwright suite covers the same path with a real phone context, including
-  reclaiming the *same team* via the stored token.
+  continues (server log: `reconnected team 1`, `reconnected team 2`). The Playwright suite
+  covers the same path with a real phone context, including reclaiming the *same team* via the
+  stored token while the other teams keep driving.
 - **Test E — CPU/GPU stress.** Six viewports, six karts, items, effects and all six HUDs are
   on during every measurement in §2; the physics column is the cost of that full load.
 

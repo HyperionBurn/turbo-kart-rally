@@ -30,6 +30,9 @@ test('six controllers join, ready, race together and the results award points', 
   test.setTimeout(420000);
   const host = await newHost(browser);
   await host.click('#btn-event', { force: true });
+  // start from a clean tournament: the server keeps the session across host restarts
+  await host.evaluate(() => window.__game.send({ type: 'hostResetSession' }));
+  await host.waitForTimeout(400);
   await expect(host.locator('.event-ui')).toHaveAttribute('data-screen', 'lobby');
   // the QR code is rendered from the local controller URL
   await expect(host.locator('#ev-qr')).toBeVisible();

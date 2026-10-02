@@ -59,9 +59,16 @@ export class HostNetworkClient {
       const msg = decodeInput(e.data);
       if (!msg) return;
       this.stats.addUpdate(msg.seq);
-      // reject stale / foreign session packets
+      const prev = this.latest.get(msg.teamId);
+      if (prev && msg.sessionId !== prev.sessionId) {
+        // a phone that reconnected starts a new session with a fresh sequence counter:
+        // adopt the newer session (and reset our baseline) instead of dropping its input
+        if (msg.sessionId < prev.sessionId) return;
+        this.latest.delete(msg.teamId);
+        this.latchedEdges.delete(msg.teamId);
+        this.stats.outOfOrder = 0; this.stats.dropped = 0; this.stats.lastSeq = -1;
+      }
       const team = this.latest.get(msg.teamId);
-      if (team && msg.sessionId !== team.sessionId) return;
       if (team && msg.seq < team.seq) { this.stats.dropped++; return; }
       const edges = { item: false, hop: false, pause: false };
       const f = msg.flags;
@@ -89,7 +96,9 @@ export class HostNetworkClient {
         this.lastLobby = m.state;
         for (const t of m.state.teams) {
           const cur = this.latest.get(t.id);
-          if (!t.connected && cur) { /* keep last neutral; host forces neutral on timeout */ }
+          // keep the last known input for a slot the server just dropped (the kart keeps
+          // its state until the reconnect deadline hands the slot to AI)
+          if (cur && t.sessionId === 0) continue;
           if (cur && cur.sessionId !== t.sessionId) this.latest.delete(t.id);
         }
         bus.emit('net:lobby', { state: m.state });

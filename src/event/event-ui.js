@@ -149,9 +149,15 @@ export class EventUI {
   _renderLeaderboard() {
     const s = this.session || {};
     const scores = (s.scores || []).slice().sort((a, b) => b.total - a.total);
+    const races = s.raceCount || 3;
+    const done = (s.raceIndex || 0) >= races;
+    const champ = done && scores[0] ? scores[0] : null;
     this.el.innerHTML = `
-      <div class="ev-board">
-        <h2>SESSION LEADERBOARD</h2>
+      <div class="ev-board ${done ? 'final' : ''}">
+        ${champ ? `<div class="champ-banner"><div class="champ-kicker">EVENT CHAMPION</div>
+          <div class="champ-name" style="--tc:${hex(0xffd835)}">${champ.name}</div>
+          <div class="champ-sub">${CHARACTERS[champ.characterId] ? CHARACTERS[champ.characterId].name : ''} · ${champ.total} PTS · ${champ.wins} WINS</div></div>` : ''}
+        <h2>${done ? 'FINAL STANDINGS' : `SESSION LEADERBOARD · RACE ${s.raceIndex || 0} OF ${races}`}</h2>
         <table>
           <thead><tr><th>#</th><th>TEAM</th><th>RACER</th><th>LAST</th><th>+PTS</th><th>TOTAL</th><th>WINS</th></tr></thead>
           <tbody>
@@ -167,6 +173,7 @@ export class EventUI {
     this.el.querySelector('#ev-quit').onclick = () => this.h.endEvent();
     // count-up animation
     this.el.querySelectorAll('.tot').forEach((td) => countUp(td, +td.dataset.total));
+    if (champ) this.h.champion && this.h.champion(champ);
   }
 }
 

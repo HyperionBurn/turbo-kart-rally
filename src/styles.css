@@ -2,8 +2,10 @@
    Turbo Kart Rally — UI styles (canvas, overlay layering, menus, HUD, results)
    ============================================================================================ */
 :root {
-  --display: 'Lilita One', 'Arial Black', Impact, sans-serif;
-  --body: 'Nunito', 'Segoe UI', system-ui, sans-serif;
+  /* System font stacks only: the venue may have no internet, and a missing webfont must
+     never delay or fail the title screen. */
+  --display: 'Arial Black', 'Segoe UI Black', 'Helvetica Neue', Impact, system-ui, sans-serif;
+  --body: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
   --ink: #14122b;
   --gold: #ffd23f;
   --orange: #ff8a1f;
@@ -82,6 +84,7 @@ button { font: inherit; color: inherit; }
 .title-screen { display: flex; flex-direction: column; align-items: center; cursor: pointer; }
 .title-cta { display: flex; gap: 14px; margin-top: 10px; z-index: 2; }
 .title-cta .btn { cursor: pointer; }
+.title-hint { margin-top: 12px; font-size: 13px; letter-spacing: 1px; color: #8892b0; z-index: 2; }
 .title-vignette {
   position: absolute; inset: 0; pointer-events: none;
   background:
@@ -533,6 +536,12 @@ button { font: inherit; color: inherit; }
 .ev-board th, .ev-board td { padding: 8px 14px; border-bottom: 1px solid #232a52; font-size: 16px; }
 .ev-board .tot { font-weight: 900; color: #fdd835; font-variant-numeric: tabular-nums; }
 
+.ev-board.final { border-color: #fdd835; box-shadow: 0 0 60px rgba(253,216,53,.25); }
+.champ-banner { margin: 0 0 14px; padding: 18px 10px 14px; border-radius: 16px; background: linear-gradient(180deg, rgba(253,216,53,.18), rgba(253,216,53,.04)); border: 2px solid #fdd835; }
+.champ-kicker { letter-spacing: 6px; font-size: 15px; color: #fdd835; font-weight: 900; }
+.champ-name { font-size: 54px; font-weight: 900; letter-spacing: 2px; color: var(--tc, #ffd835); text-shadow: 0 4px 24px rgba(0,0,0,.6); }
+.champ-sub { color: #9fb0e8; letter-spacing: 2px; }
+
 /* split HUD */
 .split-hud { position: absolute; inset: 0; pointer-events: none; display: none; }
 .split-hud.on { display: block; }
@@ -565,6 +574,13 @@ button { font: inherit; color: inherit; }
 .event-banner { position: absolute; top: 30%; left: 0; right: 0; text-align: center; font-size: 110px; font-weight: 900; letter-spacing: 8px; color: #fff; text-shadow: 0 6px 30px rgba(0,0,0,.8); opacity: 0; pointer-events: none; }
 .event-banner.show { animation: evbanner .9s ease-out; }
 @keyframes evbanner { 0% { opacity: 0; transform: scale(1.6);} 20% { opacity: 1; transform: scale(1);} 75% { opacity: 1;} 100% { opacity: 0; transform: scale(.92);} }
+
+/* start lights */
+.start-lights { position: absolute; top: 12%; left: 50%; transform: translateX(-50%); display: none; z-index: 4; }
+.start-lights.on { display: block; }
+.start-lights .lights { display: flex; gap: 14px; padding: 12px 16px; border-radius: 999px; background: rgba(4,8,20,.75); border: 2px solid #232a52; }
+.start-lights i { width: 34px; height: 34px; border-radius: 50%; background: #2a1320; box-shadow: inset 0 2px 6px rgba(0,0,0,.7); }
+.start-lights i.on { background: #e53935; box-shadow: 0 0 18px rgba(229,57,53,.9), inset 0 2px 6px rgba(0,0,0,.4); }
 
 /* latency overlay */
 .latency-overlay { position: absolute; top: 10px; right: 10px; background: rgba(4,8,20,.82); border: 1px solid #323b6b; border-radius: 12px; padding: 10px 14px; font-size: 13px; font-variant-numeric: tabular-nums; display: none; min-width: 250px; z-index: 5; }
