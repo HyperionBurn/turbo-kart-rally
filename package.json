@@ -7,7 +7,9 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node server/server.js",
+    "start": "node server/server.js",
+    "test": "playwright test"
   },
   "repository": {
     "type": "git",
@@ -22,6 +24,8 @@
   },
   "homepage": "https://github.com/bridge-mind/turbo-kart-rally#readme",
   "dependencies": {
+    "qrcode": "^1.5.4",
+    "qrcode-generator": "^2.0.4",
     "three": "^0.170.0",
     "ws": "^8.22.0"
   },

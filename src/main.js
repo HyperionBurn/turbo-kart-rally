@@ -10,6 +10,10 @@ import { RaceManager } from './race.js';
 import { HUD } from './hud.js';
 import { Menu } from './menu.js';
 import { AudioEngine } from './audio.js';
+import { HostNetworkClient } from './multiplayer/network-client.js';
+import { EventUI } from './event/event-ui.js';
+import { SplitScreen } from './event/splitscreen.js';
+import { SplitHUD } from './event/split-hud.js';
 
 // ---------------------------------------------------------------------------------------------
 // Error isolation: one failing subsystem must never freeze the loop. Log once per error type.
@@ -137,7 +141,8 @@ const menu = new Menu(uiRoot, {
   onResume: () => resume(),
   onRestart: () => { menu.hideAll(); startRace(lastSettings); },
   onQuit: () => goToTitle(),
-  onScreen: (s) => { setState(s === 'select' ? 'select' : 'title'); },
+  onScreen: (s) => { if (mode === 'solo') setState(s === 'select' ? 'select' : 'title'); },
+  onEvent: () => startEvent(),
 });
 let input = null;
 
@@ -256,8 +261,211 @@ function disposeWorld() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Flow
+// Event mode (6-player party racer)
 // ---------------------------------------------------------------------------------------------
+let mode = 'solo';                 // 'solo' | 'event'
+let eventPhase = null;             // 'lobby' | 'settings' | 'prerace' | 'countdown' | 'racing' | 'results' | 'leaderboard'
+let netClient = null;
+let split = null;
+let splitHud = null;
+let eventUI = null;
+let eventSession = null;           // last server session state
+let eventLobby = null;             // last lobby state
+const eventRadar = { physicsMs: 0, renderMs: 0, frames: 0, fpsT: 0, longFrames: 0, lastFps: 0, frameMsEma: 0, frameMsMax: 0 };
+const eventProbe = { on: false, rows: [] };
+function percentiles(a) {
+  if (!a.length) return { p50: 0, p95: 0, p99: 0, max: 0, mean: 0 };
+  const s = a.slice().sort((x, y) => x - y);
+  const at = (p) => s[Math.min(s.length - 1, Math.floor(p / 100 * s.length))];
+  return { p50: at(50), p95: at(95), p99: at(99), max: s[s.length - 1], mean: a.reduce((x, y) => x + y, 0) / a.length };
+}
+const netOffsets = new Map();      // teamId -> client clock offset vs server (reported by controller)
+
+setInterval(() => {
+  const w = world;
+  if (mode !== 'event' || !w || w.mode !== 'event' || !netClient || state !== 'racing') return;
+  const rows = w.karts.filter((k) => k.teamId > 0).map((k) => ({ teamId: k.teamId, place: k.place, lap: Math.min(k.lap || 1, w.race.laps) })).sort((a, b) => a.place - b.place);
+  netClient.send({ type: 'hostStandings', rows });
+}, 500);
+
+function startEvent() {
+  mode = 'event';
+  eventPhase = 'lobby';
+  menu.hideAll();
+  hud.hide();
+  document.body.dataset.state = 'event';
+  if (!eventUI) eventUI = new EventUI(uiRoot, eventHandlers());
+  if (!split) split = new SplitScreen(renderer, mods.camera && mods.camera.ChaseCamera);
+  if (!splitHud) splitHud = new SplitHUD(uiRoot);
+  if (!netClient) { netClient = new HostNetworkClient(); netClient.connect(); }
+  setEventFlow('lobby');
+  setSessionSettings();
+}
+
+function endEvent() {
+  mode = 'solo';
+  eventPhase = null;
+  if (eventUI) eventUI.hide();
+  if (splitHud) splitHud.hide();
+  disposeWorld();
+  goToTitle();
+}
+
+function eventHandlers() {
+  return {
+    goSettings: () => setEventFlow('settings'),
+    goLobby: () => setEventFlow('lobby'),
+    startRace: () => startEventRace(),
+    backToTitle: () => endEvent(),
+    showLeaderboard: () => setEventFlow('leaderboard'),
+    nextRace: () => setEventFlow('settings'),
+    resetTournament: () => { netClient && netClient.send({ type: 'hostResetSession' }); },
+    endEvent,
+    lobbyAction: (act, teamId) => {
+      if (!netClient) return;
+      if (act === 'ready') netClient.send({ type: 'hostForceReady', teamId });
+      else if (act === 'ai') netClient.send({ type: 'hostReplaceAI', teamId });
+      else if (act === 'remove') netClient.send({ type: 'hostRemove', teamId });
+    },
+    setSettings: (patch) => { if (netClient) netClient.send({ type: 'hostSettings', settings: patch }); },
+  };
+}
+
+function setEventFlow(flow) {
+  eventPhase = flow;
+  if (netClient) netClient.send({ type: 'hostFlow', flow });
+  if (!eventUI) return;
+  // the six driving HUDs only belong on screen while people are actually driving
+  const driving = flow === 'countdown' || flow === 'racing';
+  if (driving) splitHud.show(); else splitHud.hide();
+  const banner = uiRoot.querySelector('.event-banner');
+  if (banner && !driving) banner.classList.remove('show');
+  if (flow === 'lobby') eventUI.show('lobby');
+  else if (flow === 'settings') eventUI.show('settings');
+  else if (flow === 'prerace') eventUI.show('prerace');
+  else if (flow === 'results') eventUI.show('results');
+  else if (flow === 'leaderboard') eventUI.show('leaderboard');
+  else eventUI.hide();
+}
+
+function setSessionSettings() {
+  if (eventSession) { eventSession.controllerUrl = location.origin + '/controller'; if (eventUI) eventUI.setSession(eventSession); }
+}
+
+bus.on('net:session', ({ state }) => {
+  const prev = eventSession;
+  eventSession = state;
+  if (prev && prev.lastResults && !state.lastResults) state.lastResults = prev.lastResults;
+  if (prev && prev.lastGained && !state.lastGained) state.lastGained = prev.lastGained;
+  state.controllerUrl = location.origin + '/controller';
+  if (eventUI) eventUI.setSession(state);
+});
+bus.on('net:lobby', ({ state }) => {
+  eventLobby = state;
+  if (eventUI) eventUI.setLobby(state);
+  syncDrivers();
+  for (const t of state.teams) netOffsets.set(t.id, typeof t.offset === 'number' ? t.offset : 0);
+});
+bus.on('net:pause', () => { /* reserved: per-team pause request */ });
+
+/** Switch karts between network input and AI based on lobby state. */
+function syncDrivers() {
+  const w = world;
+  if (!w || w.mode !== 'event' || !eventLobby) return;
+  for (const t of eventLobby.teams) {
+    const kart = w.karts.find((k) => k.teamId === t.id);
+    if (!kart) continue;
+    const wantAI = t.ai || (!t.connected && t.ai);
+    if (wantAI && !kart._ai) {
+      const AIClass = mods.ai && mods.ai.AIDriver;
+      kart._ai = (AIClass && safe('ai.ctor', () => new AIClass(kart, w.track, { difficulty: w.difficulty }))) || new FallbackAI(kart, w.track);
+      if (w.ais) w.ais.push(kart._ai);
+    } else if (!wantAI && kart._ai) {
+      const i = w.ais.indexOf(kart._ai);
+      if (i >= 0) w.ais.splice(i, 1);
+      kart._ai = null;
+    }
+  }
+}
+
+function startEventRace() {
+  setEventFlow('prerace');
+  setState('loading');
+  setTimeout(() => {
+    disposeWorld();
+    try {
+      world = buildEventWorld();
+    } catch (e) { report('buildEventWorld', e); setEventFlow('lobby'); return; }
+    eventUI.hide();
+    splitHud.attach([...world.karts], eventLobby ? eventLobby.teams : []);
+    splitHud.show();
+    split.attach(world.karts.slice(0, 6));
+    audio.setGameplayActive(true);
+    audio.stopMusic();
+    setState('prerace');
+    preraceStart = performance.now();
+    preraceTimer = 2.4;
+  }, 60);
+}
+
+let preraceTimer = 0;
+let preraceStart = 0;
+function buildEventWorld() {
+  if (!mods.track || !mods.track.createTrack) throw new Error('track.js unavailable');
+  if (!mods.kart || !mods.kart.Kart) throw new Error('kart.js unavailable');
+  const settings = (eventSession && eventSession.settings) || {};
+  const speedScale = { slow: 0.85, easy: 0.9, normal: 1, fast: 1.08 }[settings.raceSpeed || 'normal'] || 1;
+  const w = { mode: 'event', difficulty: settings.difficulty || 'normal', laps: settings.laps || 3, karts: [], ais: [], player: null, scene: new THREE.Scene(), speedScale };
+  w.track = mods.track.createTrack(w.scene, renderer);
+  const teams = eventLobby ? eventLobby.teams : [];
+  const { Kart } = mods.kart;
+  const racers = Math.min(6, Math.max(1, teams.length));
+  for (let i = 0; i < racers; i++) {
+    const t = teams[i] || { id: i + 1, characterIdx: i, connected: false, ai: true };
+    const character = CHARACTERS[t.characterIdx % CHARACTERS.length];
+    const model = makeKartModel(character);
+    const kart = new Kart({ scene: w.scene, track: w.track, character, isPlayer: false, index: i, model });
+    kart.teamId = t.id;
+    kart._teamIdRaw = t.id;
+    kart.speedScale = speedScale;
+    w.karts.push(kart);
+  }
+  // AI fill (beyond the six team karts)
+  const aiFill = settings.aiFill | 0;
+  for (let i = 0; i < aiFill; i++) {
+    const character = CHARACTERS[(i + racers) % CHARACTERS.length];
+    const model = makeKartModel(character);
+    const kart = new Kart({ scene: w.scene, track: w.track, character, isPlayer: false, index: racers + i, model });
+    kart.teamId = 0;
+    kart.speedScale = speedScale;
+    w.karts.push(kart);
+    const AIClass = mods.ai && mods.ai.AIDriver;
+    const ai = (AIClass && safe('ai.ctor', () => new AIClass(kart, w.track, { difficulty: w.difficulty }))) || new FallbackAI(kart, w.track);
+    w.ais.push(ai);
+  }
+  // AIs for disconnected/AI teams
+  for (let i = 0; i < racers; i++) {
+    const t = teams[i];
+    const kart = w.karts[i];
+    if (t && (t.ai || !t.connected)) {
+      const AIClass = mods.ai && mods.ai.AIDriver;
+      const ai = (AIClass && safe('ai.ctor', () => new AIClass(kart, w.track, { difficulty: w.difficulty }))) || new FallbackAI(kart, w.track);
+      kart._ai = ai;
+      w.ais.push(ai);
+    }
+  }
+  w.race = new RaceManager({ track: w.track, karts: w.karts, player: null, laps: w.laps, silent: false });
+  const order = w.karts.slice();
+  w.race.placeOnGrid(order);
+  w.race.startCountdownPending = true;
+  if (mods.items && mods.items.ItemSystem && settings.items !== false) w.items = safe('items.ctor', () => new mods.items.ItemSystem({ scene: w.scene, track: w.track, karts: w.karts }));
+  if (mods.effects && mods.effects.Effects) w.effects = safe('effects.ctor', () => new mods.effects.Effects(w.scene, camera));
+  w.ctx = { karts: w.karts, player: null, itemSystem: w.items || null, time: 0 };
+  renderPass.scene = w.scene;
+  return w;
+}
+
+
 function buildAttract() {
   disposeWorld();
   try {
@@ -352,11 +560,64 @@ function resume() {
 }
 
 bus.on('race:go', () => {
+  if (mode === 'event' && world && world.mode === 'event' && (eventPhase === 'countdown' || eventPhase === 'racing')) {
+    eventPhase = 'racing'; setState('racing'); audio.playMusic('race');
+    flashEventBanner('GO!');
+    return;
+  }
   if (state === 'countdown' || (state === 'paused' && prevState === 'countdown')) {
     if (state === 'paused') prevState = 'racing'; else setState('racing');
     audio.playMusic('race');
   }
 });
+bus.on('race:countdown', ({ n }) => { if (mode === 'event' && world && world.mode === 'event') flashEventBanner(String(n)); });
+bus.on('race:end', (d) => {
+  if (!world || world.mode !== 'event') return;
+  const results = (d && d.results) || world.race.computeResults();
+  finishEventRace(results);
+});
+
+function flashEventBanner(text) {
+  let el = document.querySelector('.event-banner');
+  if (!el) { el = document.createElement('div'); el.className = 'event-banner'; uiRoot.appendChild(el); }
+  el.textContent = text;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+}
+
+function finishEventRace(results) {
+  const rows = [];
+  for (const r of results) {
+    const teamId = r.kart.teamId || 0;
+    rows.push({
+      teamId, place: r.place,
+      name: teamId ? (teamName(teamId)) : r.name,
+      characterName: r.character ? r.character.name : r.name,
+      color: teamColor(teamId),
+      time: r.estimated ? 'EST' : `${Math.floor(r.time / 60)}:${(r.time % 60).toFixed(2).padStart(5, '0')}`,
+    });
+  }
+  if (eventSession) {
+    const t = { type: 'hostApplyResults', results: rows.filter((r) => r.teamId > 0).map((r) => ({ teamId: r.teamId, place: r.place })) };
+    netClient && netClient.send(t);
+    // optimistic local copy for instant display; server session will reconcile
+    eventSession.lastResults = rows.slice(0, 8);
+    eventSession.lastGained = {};
+    const pts = eventSession.pointsTable || [10, 8, 6, 4, 2, 1];
+    for (const r of rows) eventSession.lastGained[r.teamId] = pts[r.place - 1] ?? 0;
+    for (const r of rows) {
+      let s = eventSession.scores.find((x) => x.teamId === r.teamId);
+      if (!s && r.teamId) { s = { teamId: r.teamId, name: r.name, characterId: 0, total: 0, wins: 0, podiums: 0, previous: 0 }; eventSession.scores.push(s); }
+      if (s) { s.previous = s.total; s.total += eventSession.lastGained[r.teamId] || 0; if (r.place === 1) s.wins++; if (r.place <= 3) s.podiums++; }
+    }
+  }
+  audio.playMusic('menu');
+  eventPhase = 'results';
+  setState('results');
+  eventUI.setSession(eventSession || {});
+  setEventFlow('results');
+}
+function teamName(id) { const t = (eventLobby && eventLobby.teams) || []; const f = t.find((x) => x.id === id); return f ? f.name : `Team ${id}`; }
+function teamColor(id) { const t = (eventLobby && eventLobby.teams) || []; const f = t.find((x) => x.id === id); return f ? f.color : '#888888'; }
 bus.on('race:finish', (d) => {
   if (!world || !d || !d.kart || !d.kart.isPlayer) return;
   setState('finished');
@@ -462,7 +723,17 @@ function simulate(w, dt) {
   time += dt;
   w.ctx.time = time;
   const racing = w.mode === 'race';
+  const eventRace = w.mode === 'event';
   const player = w.player;
+
+  if (eventRace) {
+    // human inputs from the network; stale sessions fall back to neutral
+    for (const kart of w.karts) {
+      if (kart._ai || kart.teamId <= 0) continue;
+      const st = netClient && netClient.applyInput(kart.teamId, kart);
+      kart._lastNet = st;
+    }
+  }
 
   // player input (always drain the controller so edge-triggered presses don't queue up)
   if (racing && player) {
@@ -505,6 +776,11 @@ function simulate(w, dt) {
   }
 }
 
+const FIXED_DT = 1 / 60;
+const MAX_STEPS = 4;
+let acc = 0;
+const perf = { lastT: performance.now() };
+
 function frame() {
   requestAnimationFrame(frame);
   const rawDt = clock.getDelta();
@@ -514,7 +790,51 @@ function frame() {
   const w = world;
   if (w) {
     const running = state !== 'paused' && state !== 'loading' && state !== 'boot';
-    if (running) simulate(w, dt);
+    if (running) {
+      const t0 = performance.now();
+      acc += Math.min(rawDt, 1 / 10);
+      let steps = 0;
+      while (acc >= FIXED_DT && steps < MAX_STEPS) { safe('simulate', () => simulate(w, FIXED_DT)); acc -= FIXED_DT; steps++; }
+      if (steps === MAX_STEPS) acc = 0; // drop debt after a stall so we never spiral
+      eventRadar.physicsMs = performance.now() - t0;
+    }
+
+    if (w.mode === 'event') {
+      // prerace countdown to race start
+      if (state === 'prerace') {
+        // wall-clock pacing so a slow display never stretches the presentation
+        preraceTimer = 2.4 - (performance.now() - preraceStart) / 1000;
+        updatePreraceCamera(dt);
+        if (preraceTimer <= 0) {
+          setEventFlow('countdown');
+          eventPhase = 'countdown';
+          setState('countdown');
+          world.race.startCountdown();
+        }
+      } else if (state === 'countdown' || state === 'racing' || state === 'finished') {
+        safe('split.update', () => split.update(dt, (k) => (state === 'countdown' ? 'countdown' : state === 'finished' ? 'finish' : 'race')));
+        safe('splitHud.update', () => splitHud.update(dt, { karts: world.karts, race: world.race, itemSystem: world.items }));
+      }
+      safe('audio.update', () => audio.update(dt, { player: null, karts: w.karts, camera }));
+      const broadcast = (eventSession && eventSession.settings && eventSession.settings.cameraMode === 'broadcast');
+      // shadow maps must be refreshed at most once per displayed frame even with six viewports
+      renderer.shadowMap.autoUpdate = false;
+      renderer.shadowMap.needsUpdate = true;
+      const rt0 = performance.now();
+      try { split.render(w.scene, broadcast); } catch (e) { report('split.render', e); }
+      eventRadar.renderMs = performance.now() - rt0;
+      eventRadar.frames++;
+      const ft = performance.now() - perf.lastT;
+      perf.lastT = performance.now();
+      if (ft > 33) eventRadar.longFrames++;
+updateLatencyOverlay(ft);
+      if (eventProbe.on) {
+        eventProbe.rows.push({ ft: +ft.toFixed(2), physics: +eventRadar.physicsMs.toFixed(2), render: +eventRadar.renderMs.toFixed(2) });
+        if (eventProbe.rows.length > 20000) eventProbe.rows.shift();
+      }
+safe('split.observeFrame', () => split.observeFrame(ft));
+      return;
+    }
 
     if (w.mode === 'race' && w.player) {
       if (state !== 'paused') {
@@ -532,8 +852,81 @@ function frame() {
     safe('audio.update', () => audio.update(dt, { camera }));
   }
 
-  try { composer.render(dt); } catch (e) { report('render', e); }
+  if (w && w.mode !== 'event') {
+    try { composer.render(dt); } catch (e) { report('render', e); }
+  } else if (!w) {
+    try { composer.render(dt); } catch (e) { report('render', e); }
+  }
 }
+
+function updatePreraceCamera(dt) {
+  const w = world;
+  if (!w || !w.track) return;
+  const t = performance.now() / 1000;
+  const sp = w.track.startPositions && w.track.startPositions[0];
+  const cx = sp ? sp.position.x : 0, cz = sp ? sp.position.z : 0;
+  const r = 16 + Math.sin(t * 0.5) * 3;
+  camera.position.set(cx + Math.sin(t * 0.4) * r, 8 + Math.sin(t * 0.8) * 2, cz + Math.cos(t * 0.4) * r);
+  camera.lookAt(cx, 1, cz);
+  if (camera.fov !== 55) { camera.fov = 55; camera.updateProjectionMatrix(); }
+  safe('render.prerace', () => {
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, renderer.domElement.width, renderer.domElement.height);
+    renderer.render(w.scene, camera);
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Latency overlay (host hotkey F3)
+// ---------------------------------------------------------------------------------------------
+let latencyEl = null, latencyOn = false;
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'F3') { e.preventDefault(); latencyOn = !latencyOn; latencyEl && latencyEl.classList.toggle('on', latencyOn); }
+});
+function ensureLatencyEl() {
+  if (latencyEl) return latencyEl;
+  latencyEl = document.createElement('div');
+  latencyEl.className = 'latency-overlay';
+  uiRoot.appendChild(latencyEl);
+  return latencyEl;
+}
+function updateLatencyOverlay(frameMs) {
+  // FPS accounting runs whether or not the overlay is visible — the numbers are also
+  // what the adaptive quality controller and the measurement harness rely on.
+  const r = eventRadar;
+  r.frameMsEma = r.frameMsEma ? r.frameMsEma + (frameMs - r.frameMsEma) * 0.12 : frameMs;
+  r.lastFps = Math.round(1000 / Math.max(0.5, r.frameMsEma));
+  if (!latencyOn) return;
+  ensureLatencyEl().classList.add('on');
+  const s = netClient ? netClient.stats.snapshot() : null;
+  const teams = (eventLobby && eventLobby.teams) || [];
+  const rows = teams.map((t) => `<div class="lr"><span>P${t.id}</span><b class="${t.p95 <= 30 ? 'good' : t.p95 <= 60 ? 'warn' : 'bad'}">${t.ping || '--'}ms / p95 ${t.p95 || '--'} / j ${Math.round(t.jitter || 0)}</b></div>`).join('');
+  // software input -> applied latency estimate for most recent packet per team
+  let inLat = '--';
+  const offs = netClient && netClient.clock ? netClient.clock.offset : 0;
+  if (netClient) {
+    let total = 0, n = 0;
+    for (const [tid, st] of netClient.latest) {
+      if (!st) continue;
+      const clientOff = netOffsets.get(tid);
+      if (typeof clientOff !== 'number') continue;
+      const est = st.hostReceivedAt - (st.clientTimestamp + offs - clientOff);
+      if (isFinite(est) && est >= 0 && est < 2000) { total += est; n++; }
+    }
+    if (n) inLat = `${Math.round(total / n)} ms`;
+  }
+  latencyEl.innerHTML = `
+    <div class="lr"><span>FPS</span><b>${eventRadar.lastFps}</b></div>
+    <div class="lr"><span>frame</span><b>${frameMs.toFixed(1)} ms</b></div>
+    <div class="lr"><span>physics</span><b>${eventRadar.physicsMs.toFixed(1)} ms</b></div>
+    <div class="lr"><span>render</span><b>${eventRadar.renderMs.toFixed(1)} ms</b></div>
+    <div class="lr"><span>long frames</span><b>${eventRadar.longFrames}</b></div>
+    <div class="lr"><span>update rate</span><b>${s ? s.rate : '--'}/s</b></div>
+    <div class="lr"><span>stale inputs</span><b>${s ? s.dropped : '--'}</b></div>
+    <div class="lr"><span>input→applied</span><b>${inLat}</b></div>
+    ${rows}`;
+}
+
 
 // ---------------------------------------------------------------------------------------------
 // Boot
@@ -561,6 +954,25 @@ boot();
 // ---------------------------------------------------------------------------------------------
 window.__game = {
   get state() { return state; },
+  get mode() { return mode; },
+  get eventPhase() { return eventPhase; },
+  eventDebug: () => ({
+    mode, eventPhase, state, preraceTimer, worldMode: world && world.mode,
+    splitCams: split ? split.cams.length : 0, racePhase: world && world.race && world.race.phase,
+    physicsMs: +eventRadar.physicsMs.toFixed(1), renderMs: +eventRadar.renderMs.toFixed(1),
+    fps: eventRadar.lastFps, longFrames: eventRadar.longFrames, tier: split && split.tierIndex,
+    radar: { frames: eventRadar.frames, frameMsEma: +eventRadar.frameMsEma.toFixed(1) },
+  }),
+  /** Diagnostics probe used by the measurement harness (and by /diagnostics). */
+  enableProbe() { eventProbe.on = true; eventProbe.rows.length = 0; return true; },
+  probeData() {
+    return {
+      frames: eventProbe.rows.length,
+      frameMs: percentiles(eventProbe.rows.map((r) => r.ft)),
+      physicsMs: percentiles(eventProbe.rows.map((r) => r.physics)),
+      renderMs: percentiles(eventProbe.rows.map((r) => r.render)),
+    };
+  },
   get world() { return world; },
   get mods() { return mods; },
   audio, hud, menu, renderer, camera, bus,
@@ -579,6 +991,23 @@ window.__game = {
     const w = world; if (!w || !w.player) return;
     w.race.debugSetLap(w.player, w.race.laps + 1);
     w.race._finish(w.player);
+  },
+  /** Debug/test: send a raw control message to the local event server. */
+  send: (msg) => netClient && netClient.send(msg),
+  /** Debug/test: skip the event countdown and go straight to racing. */
+  skipEventCountdown() {
+    const w = world; if (!w || w.mode !== 'event' || !w.race) return false;
+    w.race.countdownTime = 99;
+    return true;
+  },
+  netStats: () => netClient && ({ stats: netClient.stats.snapshot(), clockOffset: netClient.clock.offset, connected: netClient.connected, lobbyPing: eventLobby && eventLobby.teams.map((t) => ({ id: t.id, ping: t.ping, p95: t.p95, jitter: t.jitter })) }),
+  debugLobby: () => eventLobby && eventLobby.teams.map((t) => ({ id: t.id, ai: t.ai, conn: t.connected, sessionId: t.sessionId })),
+  /** Debug/test: advance the fixed-step simulation without waiting for frames. */
+  simulateFor(seconds) {
+    const w = world; if (!w) return 0;
+    const steps = Math.min(20000, Math.round(seconds / FIXED_DT));
+    for (let i = 0; i < steps; i++) simulate(w, FIXED_DT);
+    return steps;
   },
   PHYSICS,
   debug,

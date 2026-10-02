@@ -89,11 +89,17 @@ export class Menu {
         <div class="logo-swoosh"></div>
       </div>
       <div class="press-start">PRESS ENTER / CLICK TO START</div>
+      <div class="title-cta">
+        <button class="btn primary big" id="btn-event">EVENT MODE · 6 PLAYERS</button>
+        <button class="btn big" id="btn-solo">SOLO MODE</button>
+      </div>
       <div class="title-foot">
         <span>© Turbo Kart Rally · original procedural game</span>
         <span class="kc">M</span> mute
       </div>`;
     t.addEventListener('click', () => { if (this.screen === 'title') this._toSelect(); });
+    t.querySelector('#btn-event').addEventListener('click', (e) => { e.stopPropagation(); bus.emit('ui:confirm'); this.h.onEvent && this.h.onEvent(); });
+    t.querySelector('#btn-solo').addEventListener('click', (e) => { e.stopPropagation(); this._toSelect(); });
   }
 
   _buildSelect() {

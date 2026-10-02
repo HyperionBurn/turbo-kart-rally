@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Turbo Kart Rally — Controller</title>
+<link rel="stylesheet" href="/controller/controller.css">
+</head>
+<body>
+<div id="app">
+  <div id="rotate-hint">ROTATE DEVICE · LANDSCAPE WORKS BEST</div>
+
+  <!-- JOIN -->
+  <section id="view-join" class="view active">
+    <h1>TURBO KART RALLY</h1>
+    <p class="sub">Team Controller</p>
+    <input id="name-input" maxlength="14" placeholder="TEAM NAME" autocomplete="off">
+    <button id="join-btn" class="big primary">JOIN RACE</button>
+    <p id="join-status" class="status"></p>
+  </section>
+
+  <!-- LOBBY / SELECT -->
+  <section id="view-lobby" class="view">
+    <header>
+      <div id="team-chip"><span id="team-color"></span><span id="team-name">Team</span></div>
+      <div id="net-pill"><span id="ping">--</span> ms</div>
+    </header>
+    <div id="char-grid"></div>
+    <button id="ready-btn" class="big primary">READY</button>
+    <p class="hint">Pick your racer, press READY. Host starts the race.</p>
+  </section>
+
+  <!-- RACE -->
+  <section id="view-race" class="view">
+    <div class="race-hud">
+      <span id="race-team"></span>
+      <span id="race-pos"></span>
+    </div>
+    <div class="pad">
+      <div class="side left">
+        <div class="pad-row">
+          <button class="pad-btn steer" id="ctl-left">◀</button>
+          <button class="pad-btn steer" id="ctl-right">▶</button>
+        </div>
+        <button class="pad-btn drift" id="ctl-drift">DRIFT</button>
+      </div>
+      <div class="side mid">
+        <button class="pad-btn item" id="ctl-item">ITEM</button>
+        <button class="pad-btn look" id="ctl-look">LOOK</button>
+      </div>
+      <div class="side right">
+        <button class="pad-btn gas" id="ctl-gas">GAS</button>
+        <button class="pad-btn brake" id="ctl-brake">BRAKE</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- END -->
+  <section id="view-end" class="view">
+    <h2 id="end-title">RESULTS</h2>
+    <div id="end-body"></div>
+    <p class="hint">Next race starts when the host is ready.</p>
+  </section>
+</div>
+<script type="module" src="/controller/controller.js"></script>
+</body>
+</html>

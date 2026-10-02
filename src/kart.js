@@ -90,6 +90,7 @@ export class Kart {
 
     this.input = neutralInput();
     this.maxSpeedScale = 1;       // multiplier used by AI rubber-banding / difficulty
+    this.speedScale = 1;         // global race-speed class multiplier (50cc/100cc/150cc event setting)
     this.time = 0;
 
     // race fields (maintained by RaceManager)
@@ -374,7 +375,7 @@ export class Kart {
   }
 
   _topSpeed() {
-    let base = this.stats.maxSpeed * (fin(this.maxSpeedScale) ? this.maxSpeedScale : 1);
+    let base = this.stats.maxSpeed * (fin(this.maxSpeedScale) ? this.maxSpeedScale : 1) * (fin(this.speedScale) ? this.speedScale : 1);
     if (this.shrinkTimer > 0) base *= SHRINK_SPEED_FACTOR;
     const offroad = this.surface === 'offroad' && this.boostTimer <= 0 && this.starTimer <= 0 && !this.airborne;
     if (offroad) base *= PHYSICS.offroadMaxSpeedFactor;

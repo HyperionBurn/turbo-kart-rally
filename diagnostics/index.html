@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Turbo Kart Rally — Diagnostics</title>
+<style>
+  body { margin: 0; background: #0b0e1a; color: #dfe6ff; font-family: 'Nunito', system-ui, sans-serif; padding: 24px; }
+  h1 { letter-spacing: 2px; }
+  h2 { margin-top: 28px; font-size: 15px; letter-spacing: 2px; color: #8892b0; }
+  table { border-collapse: collapse; min-width: 720px; }
+  th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid #232a52; font-variant-numeric: tabular-nums; }
+  .good { color: #69f0ae; } .warn { color: #ffd54f; } .bad { color: #ff5252; }
+  button { background: #1b2140; color: #fff; border: 1px solid #323b6b; border-radius: 8px; padding: 6px 10px; margin: 2px; cursor: pointer; }
+  button:hover { background: #232a52; }
+  .row { margin: 4px 0; }
+</style>
+</head>
+<body>
+<h1>DIAGNOSTICS</h1>
+<p id="conn">connecting…</p>
+<h2>TEAM LINK QUALITY</h2>
+<table id="teams"><thead><tr><th>Team</th><th>Connected</th><th>RTT p50</th><th>p95</th><th>jitter</th><th>ready</th><th>AI</th></tr></thead><tbody></tbody></table>
+<h2>FAULT INJECTION (Test D)</h2>
+<div id="faults"></div>
+<h2>SMOKE TESTS</h2>
+<p>Run these from a terminal on the laptop:</p>
+<pre>node scripts/stress.cjs --clients 6 --duration 30     # Test A: 6 normal controllers
+node scripts/stress.cjs --clients 6 --duration 10 --frantic   # Test B: frantic inputs
+node scripts/stress.cjs --clients 40 --duration 30    # Test C: 40 connections
+node scripts/stress.cjs --clients 2 --duration 5 --disconnect-at 3  # Test F: reconnect</pre>
+<h2>LATENCY CAMERA TEST</h2>
+<p>On a controller press any button — the host overlay flashes that team's corner border and its sequence number.
+Record phone + projector at 240 FPS. <code>latency_ms = frames_between_events / camera_fps × 1000</code>.</p>
+<script type="module">
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+  const $ = (id) => document.getElementById(id);
+  ws.onopen = () => { ws.send(JSON.stringify({ type: 'diagHello' })); $('conn').textContent = 'connected'; };
+  ws.onmessage = (e) => {
+    if (typeof e.data !== 'string') return;
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (m.type === 'lobby') render(m.state);
+  };
+  function render(state) {
+    const tb = $('teams').querySelector('tbody');
+    tb.innerHTML = state.teams.map((t) => {
+      const q = t.p95 <= 30 ? 'good' : t.p95 <= 60 ? 'warn' : 'bad';
+      return `<tr><td>${t.name}</td><td>${t.connected ? '●' : '○'}</td><td>${t.ping || '--'}</td><td class="${q}">${t.p95 || '--'}</td><td>${t.jitter || '--'}</td><td>${t.ready ? '✓' : ''}</td><td>${t.ai ? 'AI' : ''}</td></tr>`;
+    }).join('');
+    $('faults').innerHTML = ['*', 1, 2, 3, 4, 5, 6].map((k) =>
+      `<div class="row"><b>${k === '*' ? 'ALL' : 'Team ' + k}:</b>
+        <button data-k="${k}" data-d="20" data-j="5">+20ms</button>
+        <button data-k="${k}" data-d="50" data-j="10">+50ms</button>
+        <button data-k="${k}" data-d="100" data-j="20">+100ms</button>
+        <button data-k="${k}" data-d="0" data-j="30">jitter</button>
+        <button data-k="${k}" data-pause="1">pause 3s</button>
+        <button data-k="${k}">clear</button></div>`).join('');
+    $('faults').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.k === '*' ? '*' : +b.dataset.k;
+      if (b.dataset.pause) {
+        ws.send(JSON.stringify({ type: 'fault', teamId: k, fault: { pause: true } }));
+        setTimeout(() => ws.send(JSON.stringify({ type: 'fault', teamId: k, fault: null })), 3000);
+      } else if (b.dataset.d === undefined && !b.dataset.j) {
+        ws.send(JSON.stringify({ type: 'fault', teamId: k, fault: null }));
+      } else {
+        ws.send(JSON.stringify({ type: 'fault', teamId: k, fault: { delayMs: +b.dataset.d, jitterMs: +b.dataset.j } }));
+      }
+    }));
+  }
+</script>
+</body>
+</html>

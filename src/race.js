@@ -171,6 +171,9 @@ export class RaceManager {
       this.playerFinished = true;
       this.endTimer = 3.8;
       this._setWrongWay(false);
+    } else if (!this.player && this._finishCount === 1) {
+      // event mode: no single player kart — wrap up shortly after the first finisher
+      this.endTimer = 6;
     }
     if (this._finishCount >= this.karts.length && this.endTimer < 0 && !this.ended && this.player) this.endTimer = 1;
   }
