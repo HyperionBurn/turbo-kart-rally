@@ -42,7 +42,7 @@ renderer.toneMappingExposure = 1.0;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-// keep the drawing buffer equal to the window; the event renderer scales the buffer instead
+
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 3000);
@@ -64,8 +64,9 @@ function onResize() {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  // in event mode the split renderer owns the buffer size (render-scale tier)
-  if (split) split._applyTier(); else renderer.setSize(w, h, false);
+  // in event mode the split renderer owns the pixel ratio + buffer size (quality tier)
+  if (split) split._applyTier();
+  else { renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); renderer.setSize(w, h, false); }
   composer.setSize(w, h);
   bloom.setSize(w, h);
 }
@@ -1081,7 +1082,28 @@ window.__game = {
   sessionSettings: () => (eventSession && eventSession.settings) || null,
   /** Debug/test: pin the adaptive render-scale tier. */
   setSplitTier(i) { if (split) { split.tierIndex = Math.max(0, Math.min(SCALE_TIERS.length - 1, i | 0)); split._applyTier(); } return split && split.tierIndex; },
-  /** Diagnostics: GL viewport rects (buffer px) and their CSS equivalents. */
+  /**
+ * Authoritative read-back: re-renders one split frame and reads each viewport straight out
+ * of three.js (`getViewport` returns CSS pixels), so tests and field diagnosis compare the
+ * real GL state — not our own arithmetic.
+ */
+  readViewport() {
+    const w = world; if (!w || !split || !split.cams.length) return { mapping: null, viewports: [] };
+    split.render(w.scene, (eventSession && eventSession.settings && eventSession.settings.cameraMode === 'broadcast') === true);
+    const v = new THREE.Vector4();
+    const canvasH = split.lastMapping ? split.lastMapping.cssH : window.innerHeight;
+    const out = [];
+    for (let i = 0; i < split.cams.length; i++) {
+      renderer.getViewport(v);
+      // re-render to leave the viewport set for this camera in place
+      split.renderOne(i, w.scene);
+      renderer.getViewport(v);
+      out.push({ x: Math.round(v.x), y: Math.round(canvasH - (v.y + v.z)), w: Math.round(v.z), h: Math.round(v.w) });
+    }
+    return { mapping: split.lastMapping, viewports: out };
+  },
+  THREE,
+  /** Debug/test: pin the adaptive render-scale tier. */
   viewportDebug: () => (split && split.lastViewports ? { mapping: split.lastMapping, viewports: split.lastViewports } : null),
   manualRender: () => {
     const w = world; if (!w || !split || !split.cams.length) return 'no-world';

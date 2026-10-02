@@ -54,55 +54,69 @@ export class SplitScreen {
 
   /**
    * Render every viewport. scene: shared THREE.Scene.
-   *
-   * Layout is defined in CSS pixels relative to the *canvas element's* box and then mapped
-   * into drawing-buffer pixels. Deriving the viewports from the buffer alone silently skews
-   * the grid whenever the buffer aspect and the CSS box disagree (fullscreen browser chrome,
-   * device pixel ratio, render-scale tiers) — and then the 3D view no longer lines up with
-   * the DOM HUD panels drawn on top of it.
+   * Viewports are handed to three.js in CSS pixels, which is exactly what setViewport and
+   * setScissor expect: three multiplies by the renderer pixel ratio internally. Converting
+   * to drawing-buffer pixels by hand double-counts the pixel ratio, which skewed the grid
+   * (the top row of a 3x2 split was cut off) whenever devicePixelRatio was not 1.
    */
   render(scene, broadcast) {
     const r = this.renderer;
     const el = r.domElement;
     const rect = el.getBoundingClientRect();
-    const cssW = Math.max(1, rect.width || el.clientWidth || window.innerWidth);
-    const cssH = Math.max(1, rect.height || el.clientHeight || window.innerHeight);
+    const cssW = Math.max(1, Math.round(rect.width || el.clientWidth || window.innerWidth));
+    const cssH = Math.max(1, Math.round(rect.height || el.clientHeight || window.innerHeight));
     r.getDrawingBufferSize(_size);
-    const bw = Math.max(1, Math.floor(_size.x)), bh = Math.max(1, Math.floor(_size.y));
-    const sx = bw / cssW, sy = bh / cssH;         // CSS px -> buffer px
-    this.lastMapping = { cssW, cssH, bw, bh, sx, sy };
+    this.lastMapping = { cssW, cssH, bw: Math.floor(_size.x), bh: Math.floor(_size.y), pixelRatio: r.getPixelRatio() };
 
     r.setScissorTest(true);
     r.setClearColor(0x0b0e1a, 1);
     if (broadcast) {
       const c = this.cams[this.broadcastIndex];
-      r.setViewport(0, 0, bw, bh); r.setScissor(0, 0, bw, bh);
+      r.setViewport(0, 0, cssW, cssH); r.setScissor(0, 0, cssW, cssH);
       if (c) {
-        c.camera.aspect = bw / bh; c.camera.updateProjectionMatrix();
+        c.camera.aspect = cssW / cssH; c.camera.updateProjectionMatrix();
         r.clear(); r.render(scene, c.camera);
       } else r.clear();
       r.setScissorTest(false);
-      this.lastViewports = [{ x: 0, y: 0, w: bw, h: bh }];
+      this.lastViewports = [{ x: 0, y: 0, w: cssW, h: cssH }];
       return;
     }
     const layout = this.layout;
     this.lastViewports = [];
     for (let i = 0; i < this.cams.length; i++) {
-      const [nx, ny, nw, nh] = layout[i]; // ny measured from the top
-      const vx = Math.round(nx * cssW * sx);
-      const vw = Math.max(1, Math.round(nw * cssW * sx));
-      const vyTop = Math.round(ny * cssH * sy);
-      const vh = Math.max(1, Math.round(nh * cssH * sy));
-      const vy = Math.round(bh - (vyTop + vh)); // GL origin is bottom-left
+      const [nx, ny, nw, nh] = layout[i]; // ny measured from the top of the canvas
+      const vx = Math.round(nx * cssW);
+      const vw = Math.max(1, Math.round(nw * cssW));
+      const vyTop = Math.round(ny * cssH);
+      const vh = Math.max(1, Math.round(nh * cssH));
+      const vy = cssH - (vyTop + vh);        // GL viewport origin is bottom-left
       const c = this.cams[i];
       c.camera.aspect = vw / vh; c.camera.updateProjectionMatrix();
       r.setViewport(vx, vy, vw, vh);
       r.setScissor(vx, vy, vw, vh);
       if (i === 0) r.clear();
       r.render(scene, c.camera);
-      this.lastViewports.push({ x: vx, y: vyTop, w: vw, h: vh, css: { x: nx * cssW, y: ny * cssH, w: nw * cssW, h: nh * cssH } });
+      this.lastViewports.push({ x: vx, y: vyTop, w: vw, h: vh });
     }
     r.setScissorTest(false);
+  }
+
+  /** Render only the given camera index (diagnostics read-back), leaving its viewport set. */
+  renderOne(index, scene) {
+    const c = this.cams[index];
+    if (!c) return;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const cssW = Math.max(1, Math.round(rect.width || window.innerWidth));
+    const cssH = Math.max(1, Math.round(rect.height || window.innerHeight));
+    const [nx, ny, nw, nh] = this.layout[index];
+    const vx = Math.round(nx * cssW);
+    const vw = Math.max(1, Math.round(nw * cssW));
+    const vyTop = Math.round(ny * cssH);
+    const vh = Math.max(1, Math.round(nh * cssH));
+    this.renderer.setScissorTest(true);
+    this.renderer.setViewport(vx, cssH - (vyTop + vh), vw, vh);
+    this.renderer.setScissor(vx, cssH - (vyTop + vh), vw, vh);
+    this.renderer.render(scene, c.camera);
   }
 
   /** Call once per displayed frame with its ms; auto-adjust tiers. */
@@ -122,13 +136,16 @@ export class SplitScreen {
   }
   _applyTier() {
     const scale = SCALE_TIERS[this.tierIndex];
-    // size the buffer from the canvas' own CSS box, not from window.innerWidth/Height:
-    // those can disagree (fullscreen chrome, scrollbars), which would skew the grid
     const el = this.renderer.domElement;
-    const w = Math.max(320, Math.round((el.clientWidth || window.innerWidth) * scale));
-    const h = Math.max(180, Math.round((el.clientHeight || window.innerHeight) * scale));
-    this.renderer.setSize(w, h, false);   // updateStyle=false: CSS keeps the canvas full-window
-    bus.emit('split:quality', { tier: this.tierIndex, scale });
+    const cssW = Math.max(320, Math.round(el.clientWidth || window.innerWidth));
+    const cssH = Math.max(180, Math.round(el.clientHeight || window.innerHeight));
+    // Quality is expressed as the pixel ratio only: CSS keeps the canvas full-window, and
+    // three.js turns these CSS dimensions into buffer pixels. Keeping a single source of
+    // truth here is what guarantees setViewport() lines up with the DOM HUD.
+    const dpr = Math.max(0.5, Math.min(window.devicePixelRatio || 1, 3) * scale);
+    this.renderer.setPixelRatio(dpr);
+    this.renderer.setSize(cssW, cssH, false);
+    bus.emit('split:quality', { tier: this.tierIndex, dpr });
   }
   /** Broadcast mode is a single full-screen view: give it the top tier, no downscaling. */
   setBroadcastMode(on) {
