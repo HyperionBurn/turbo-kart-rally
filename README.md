@@ -2,19 +2,59 @@
 
 **An arcade kart racer in the spirit of Mario Kart, built entirely with Three.js. Every mesh, texture, sound effect and music track is generated in code at load time. There are no asset files and no build step.**
 
-The whole game was produced by five Claude Opus 5.5 sub-agents working in parallel from a single prompt, without a single follow-up question. The prompt is reproduced below.
+**Now also a six-player party racer.** Run one command, project it on a wall, and six teams
+scan a QR code with their phones and race each other on a true 3×2 split screen — no app,
+no install, no accounts. See [`EVENT_RUNBOOK.md`](EVENT_RUNBOOK.md) for the event-day checklist.
+
+```bash
+npm install
+npm start
+```
+
+```
+HOST:        http://localhost:8080
+LAN:         http://192.168.x.x:8080      <- phones scan the QR code on screen
+Diagnostics: http://localhost:8080/diagnostics
+```
 
 <p align="center">
   <a href="https://bridge-mind.github.io/turbo-kart-rally/"><img src="docs/screenshots/title.jpg" alt="Turbo Kart Rally title screen" width="800"></a>
 </p>
 
 <p align="center">
-  <a href="https://bridge-mind.github.io/turbo-kart-rally/"><strong>▶ Play it in your browser</strong></a>
+  <a href="https://bridge-mind.github.io/turbo-kart-rally/"><strong>▶ Play the solo game in your browser</strong></a>
 </p>
 
-## Play
+## Two modes
 
-Open **https://bridge-mind.github.io/turbo-kart-rally/** in a desktop browser with WebGL2 (Chrome, Edge, Firefox or Safari). Click or press Enter on the title screen, choose one of eight racers, pick a class (50cc, 100cc or 150cc) and a lap count, then hit RACE!. A keyboard or a gamepad works.
+**Solo mode** (original game, unchanged): pick a racer, class and lap count, race seven AI
+drivers. Keyboard or gamepad.
+
+**Event mode** (six players on one laptop):
+
+```text
+title → EVENT MODE → lobby with QR + room code → six phones join, pick racers, READY
+      → race settings → prerace flyover → 3-2-1-GO → 3×2 split-screen race
+      → results → event points → session leaderboard → next race / rematch
+```
+
+- Six human-controlled teams, each with its own name, colour, racer and ready state.
+- Phones are controllers only. Physics, collisions, items, laps and results are simulated
+  authoritatively on the host machine; phones send 24-byte input packets at 30 Hz.
+- Disconnects degrade gracefully: the kart coasts, the slot shows RECONNECTING, the host can
+  hand the slot to AI after 15 s, and the same phone reclaims its team automatically when it
+  comes back — mid-race, without restarting.
+- Points accumulate across races for the whole session; the leaderboard animates the totals.
+
+## Controls
+
+Solo: keyboard or gamepad as before (see the table further down).
+Phones: landscape pad — left/right steer, GAS, BRAKE, DRIFT, ITEM, LOOK.
+
+## Play (solo, online)
+
+Open **https://bridge-mind.github.io/turbo-kart-rally/** in a desktop browser with WebGL2.
+Click or press Enter, choose one of eight racers, pick a class and lap count, hit RACE!.
 
 Race seven AI drivers around Palm Cove Circuit. Drift through corners and release for a mini-turbo. Grab item boxes and fire shells, drop bananas, pop mushrooms, or call down lightning on the field.
 
@@ -66,24 +106,51 @@ Hold drift through a corner. Sparks turn blue, then orange, then purple. Release
 
 ## Run it locally
 
-There is no build step. Serve the folder with any static server:
-
 ```bash
 git clone https://github.com/bridge-mind/turbo-kart-rally.git
 cd turbo-kart-rally
-python3 -m http.server 8080
+npm install       # three.js (vendored locally), ws, playwright for tests
+npm start         # host + controllers + diagnostics on one port
 ```
 
-Then open http://localhost:8080. Three.js r170 is loaded from jsDelivr through an import map, so an internet connection is needed.
+Then open **http://localhost:8080**. Three.js r170 is served from `node_modules` through an
+import map, so no internet connection is needed at the venue. The terminal prints the
+localhost URL, every LAN URL it can find, and the diagnostics URL.
+
+Any other static server also works for solo play (`python3 -m http.server 8080`); the
+phone-controller features need `npm start`.
+
+## Tests and diagnostics
+
+```bash
+npm test                              # Playwright: full event flow, reconnect, host controls, solo regression
+node scripts/stress.cjs --clients 40 --duration 30 --as-host   # 40 WebSocket clients vs the lobby
+node scripts/measure-host.cjs --clients 6 --duration 30 --tag six-normal   # frame/physics/render/latency capture
+```
+
+Press **F3** on the host page for the live latency overlay (FPS, frame time, physics,
+render, per-team RTT/p95/jitter, stale inputs). `http://localhost:8080/diagnostics` shows the
+room-wide link table and fault-injection controls. Measured numbers live in
+[`PERFORMANCE.md`](PERFORMANCE.md).
 
 ## Project layout
 
 ```
 turbo-kart-rally/
 ├── index.html            entry page and import map
-├── ARCHITECTURE.md       contract the five sub-agents built against
+├── ARCHITECTURE.md       module contract + event-mode design (section 6)
+├── EVENT_RUNBOOK.md      event-day setup checklist and emergency fallbacks
+├── PERFORMANCE.md        measured frame/render/latency numbers and limits
+├── server/
+│   └── server.js         static host + controller/host WebSockets, rooms, sessions, diagnostics
+├── controller/
+│   ├── index.html        phone controller (join, racer select, ready, race pad)
+│   ├── controller.js     pointer-event input, 30 Hz packets, reconnect token
+│   └── controller.css    landscape layout
+├── diagnostics/
+│   └── index.html        room-wide link table + fault injection
 ├── src/
-│   ├── main.js           renderer, post-processing, state machine, game loop
+│   ├── main.js           renderer, post-processing, state machine, fixed-step loop, event mode
 │   ├── config.js         roster, physics tuning, items, difficulty, key bindings
 │   ├── events.js         shared event bus
 │   ├── track.js          circuit, surfaces, walls, racing line
@@ -99,12 +166,26 @@ turbo-kart-rally/
 │   ├── hud.js            in-race HUD and results
 │   ├── menu.js           title, character select, pause
 │   ├── audio.js          Web Audio sound and music
-│   └── styles.css        UI styling
-├── dev/                  per-module test harnesses the sub-agents used
+│   ├── styles.css        UI styling
+│   ├── multiplayer/
+│   │   ├── protocol.js       24-byte binary input frame
+│   │   ├── latency.js        clock sync, RTT/jitter statistics
+│   │   └── network-client.js host socket, latest-state semantics
+│   └── event/
+│       ├── splitscreen.js    six scissored viewports, adaptive quality
+│       ├── split-hud.js      compact per-viewport HUD
+│       └── event-ui.js       lobby / settings / prerace / results / leaderboard
+├── scripts/              stress, measurement and manual end-to-end harnesses
+├── tests/                Playwright suite (event flow, reconnect, solo regression)
+├── docs/measurements/    raw JSON captured by scripts/measure-host.cjs
+├── dev/                  per-module test harnesses from the original build
 └── docs/screenshots/     images used in this README
 ```
 
-Open `window.__game` in the browser console for debug hooks such as `startRace()`, `toFinalLap()`, `finishPlayer()` and `debug.autopilot = true`.
+Open `window.__game` in the browser console for debug hooks such as `startRace()`,
+`toFinalLap()`, `finishPlayer()` and `debug.autopilot = true`. In event mode you also get
+`eventDebug()`, `netStats()`, `probeData()`, `simulateFor(seconds)`, `skipEventCountdown()`
+and `send(msg)` for the local server.
 
 ## Screenshots
 

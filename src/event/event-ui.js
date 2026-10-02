@@ -173,7 +173,7 @@ export class EventUI {
 function slotHtml(t) {
   const ch = CHARACTERS[t.characterIdx];
   return `
-    <div class="slot ${t.connected ? 'on' : ''} ${t.ready ? 'ready' : ''}" style="--tc:${t.color}">
+    <div class="slot ${t.connected ? 'on' : ''} ${t.ready ? 'ready' : ''}" style="--tc:${t.color}" data-team="${t.id}">
       <div class="slot-head"><span class="dot" style="background:${t.color}"></span><b>${t.name}</b><span class="slot-state">${t.connected ? (t.ready ? 'READY' : 'IN LOBBY') : (t.ai ? 'AI' : 'EMPTY')}</span></div>
       <div class="slot-char">${ch ? ch.name : '—'}</div>
       <div class="slot-meta">${t.connected ? `${t.ping || 0}ms · batt ${t.battery != null ? t.battery + '%' : '--'}` : '&nbsp;'}</div>

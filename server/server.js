@@ -222,6 +222,7 @@ function setFault(teamId, f) {
   faults.set(key, { delayMs: f.delayMs || 0, jitterMs: f.jitterMs || 0, pause: !!f.pause });
 }
 function onClose(ws) {
+  log(`close role=${ws._role} team=${ws._teamId || '-'} connected=${teams.filter((t) => t.connected).length}`);
   if (ws._role === 'host' && ws === hostWs) {
     hostWs = null;
     // the host page is the only thing that can drive the event flow; without it we return
@@ -263,6 +264,8 @@ function applyResults(results) {
 // keepalive + AI replacement timeout
 setInterval(() => {
   for (const ws of wss.clients) {
+    // a phone that walks out of range never sends 'close'; ping it so the socket dies promptly
+    if (ws.readyState === 1) { try { ws.ping(); } catch {} }
     if (ws._lastAlive && Date.now() - ws._lastAlive > 20000) { try { ws.terminate(); } catch {} }
   }
   for (const t of teams) {
@@ -273,6 +276,11 @@ setInterval(() => {
 }, 5000);
 
 function perfNow() { return Number(process.hrtime.bigint() / 1000000n); }
+const LOG = process.env.TKR_LOG || null;
+function log(msg) {
+  if (!LOG) return;
+  try { require('fs').appendFileSync(LOG, `${new Date().toISOString()} ${msg}\n`); } catch {}
+}
 
 server.listen(PORT, '0.0.0.0', () => {
   const ips = lanIps();

@@ -396,7 +396,7 @@ function startEventRace() {
     try {
       world = buildEventWorld();
     } catch (e) { report('buildEventWorld', e); setEventFlow('lobby'); return; }
-    eventUI.hide();
+    eventUI.show('prerace');
     splitHud.attach([...world.karts], eventLobby ? eventLobby.teams : []);
     splitHud.show();
     split.attach(world.karts.slice(0, 6));
@@ -997,6 +997,12 @@ window.__game = {
   /** Debug/test: skip the event countdown and go straight to racing. */
   skipEventCountdown() {
     const w = world; if (!w || w.mode !== 'event' || !w.race) return false;
+    w.race.countdownTime = 99;
+    return true;
+  },
+  /** Debug/test: skip the solo countdown the same way. */
+  skipCountdown() {
+    const w = world; if (!w || !w.race) return false;
     w.race.countdownTime = 99;
     return true;
   },

@@ -1,8 +1,13 @@
 # Turbo Kart Rally — Architecture Contract
 
 A kart racer in the spirit of Mario Kart, built with **Three.js r170** as native ES modules (no build step).
-`index.html` loads `src/main.js` through an import map (`three`, `three/addons/…`). Serve with
-`python3 -m http.server 8080` from the project root and open `http://localhost:8080`.
+`index.html` loads `src/main.js` through an import map (`three`, `three/addons/…`, `qrcode-generator`).
+The whole thing is served by the local event server:
+
+```bash
+npm install
+npm start     # -> http://localhost:8080  (host), /controller (phones), /diagnostics
+```
 
 **Original IP only**: no Nintendo names, characters, logos, or assets. Everything is procedural
 (geometry, textures via CanvasTexture, audio via WebAudio). No external asset files.
@@ -29,6 +34,7 @@ A kart racer in the spirit of Mario Kart, built with **Three.js r170** as native
 | `src/items.js`, `src/effects.js` | Agent 3 — Items & FX | `ItemSystem`, `Effects` |
 | `src/models.js`, `src/camera.js` | Agent 4 — Art & Camera | `createKartModel`, `createItemModel`, `ChaseCamera` |
 | `src/main.js`, `src/race.js`, `src/hud.js`, `src/menu.js`, `src/audio.js`, `src/styles.css` | Agent 5 — Game & UI | game loop, `RaceManager`, `HUD`, `Menu`, `AudioEngine` |
+| `src/multiplayer/*`, `controller/*`, `server/*`, `src/event/*` | Event mode | see §6 |
 
 Do **not** edit files you don't own. If you need something from another module, code against this contract.
 
@@ -214,3 +220,106 @@ race:countdown {n} · race:go · race:lap {kart, lap} · race:finalLap · race:f
 kart:driftStart · kart:driftLevel · kart:driftEnd · kart:miniTurbo · kart:boost · kart:hit · kart:wallBump · kart:jump · kart:land · kart:bump
 item:pickup · item:roulette · item:got · item:use · item:hit · item:explode · item:lightning
 game:state {state}  ('title'|'select'|'intro'|'countdown'|'racing'|'finished'|'paused')
+
+---
+
+# 6. Event mode (six-player party racer)
+
+Event mode is additive: nothing in sections 1-5 changed behaviour for solo play. It adds a
+phone-controller client, a local-network server, a second rendering path (one shared scene,
+six scissored viewports) and a fixed-timestep simulation loop.
+
+## 6.1 Topology
+
+```
+PHONE 1..6 ──Wi-Fi/LAN──> LOCAL SERVER (server/server.js, port 8080) ──localhost WS──> HOST BROWSER
+   /controller (browser)         rooms · relays · session authority        6 cameras · authoritative physics
+                                diagnostics · fault injection
+```
+
+- **Phones send input, never positions.** Physics, collisions, items, laps, placement and
+  results are computed only on the host machine.
+- The server owns: room/slot assignment, reconnect tokens, race settings, points, and the
+  session ledger. It never simulates a kart.
+- The server is authoritative for lobby state; the host page mirrors it and sends control
+  messages (`hostFlow`, `hostSettings`, `hostRemove`, `hostForceReady`, `hostReplaceAI`,
+  `hostApplyResults`, `hostResetSession`).
+
+## 6.2 Modules
+
+| File | Responsibility |
+|---|---|
+| `server/server.js` | HTTP static host + `/controller` + `/diagnostics` + `/debug/slots`; one WebSocket endpoint (`/ws`) that multiplexes roles (host / controller / spectator / diagnostics); six team slots; reconnect tokens; 1 Hz authoritative lobby heartbeat; batched relay log every 500 ms; per-team fault injection (delay / jitter / pause). |
+| `src/multiplayer/protocol.js` | 24-byte binary input frame (magic, type, teamId, sessionId, seq, f64 client timestamp, steer/throttle/brake bytes, flags). Encode/decode with zero allocation. |
+| `src/multiplayer/latency.js` | `ClockSync` (NTP-style offset vs the server), `LinkStats` (RTT p50/p95/p99, jitter, rate, out-of-order, drops, reconnects), `qualityOf` thresholds. |
+| `src/multiplayer/network-client.js` | Host-side socket. Applies **latest-state semantics**: one packet per team, older sequences rejected, edge flags latched until consumed. Queue-and-replay on reconnect. |
+| `controller/index.html/.css/.js` | Landscape phone controller: Pointer Events only, multi-touch per control, haptics via `navigator.vibrate`, battery reporting, token persistence for auto-reclaim, 30 Hz input + immediate button edges. |
+| `src/event/splitscreen.js` | Six `PerspectiveCamera`s + `ChaseCamera`s over one scene; layouts for 1-6 players; `setViewport`/`setScissor`/`setScissorTest` rendering; adaptive pixel-ratio tiers driven by measured p95 frame time. |
+| `src/event/split-hud.js` | Compact per-viewport HUD: team chip, place, lap, item, speed bar, reconnect warning. |
+| `src/event/event-ui.js` | Host overlays: lobby (QR + slots + host controls), settings, prerace, results with points, session leaderboard with count-up. Diffs lobby/session signatures so DOM is not rebuilt on every heartbeat. |
+| `src/main.js` | Fixed 60 Hz simulation accumulator, event-mode state machine, AI takeover on disconnect, F3 latency overlay, diagnostics probe. |
+
+## 6.3 Simulation and rendering
+
+```
+accumulator += min(frameDelta, 0.1)
+while accumulator >= 1/60 and steps < 4:  simulate(1/60);  accumulator -= 1/60
+if steps == 4: accumulator = 0          # never spiral after a tab stall
+render once per animation frame
+```
+
+Input is sampled inside the simulation step (network state is pulled per team), so rendering
+speed can never change physics correctness. Six viewports render the **same** scene with
+`shadowMap.autoUpdate = false` refreshed once per displayed frame; bloom/postprocessing are
+skipped in split mode.
+
+## 6.4 Event flow
+
+`title -> lobby(+QR) -> settings -> prerace -> countdown -> racing -> results -> leaderboard -> next race`
+
+`eventPhase` in `src/main.js` drives the UI and the controller screens; the same value is
+mirrored to phones as `lobby.state.flow` so a phone switches between the join pad, the race
+pad and the results screen without polling.
+
+Points default to `[10, 8, 6, 4, 2, 1]` and accumulate in `session.scores` for the whole
+event session (`server/session-state.json` survives a server restart; only a lobby/settings/
+leaderboard state is restored, never an in-flight race).
+
+## 6.5 Resilience
+
+- **Disconnect:** the kart keeps its last input for one tick then goes neutral; the slot
+  shows RECONNECTING; after 15 s the host converts the slot to AI (`syncDrivers()`), and
+  `Kart.controlsLocked` is untouched so a returning human resumes instantly.
+- **Reconnect:** the phone stores its token in `localStorage`; on reload it rejoins
+  automatically and reclaims the same team (new `sessionId`, so stale packets from the old
+  socket are rejected).
+- **One bad client:** inputs are per-team maps, so a stalled phone cannot queue or block
+  other racers. The server drops packets for teams under an injected pause fault.
+- **Host refresh:** the host socket reconnects automatically and the lobby/leaderboard is
+  restored from the server.
+- **Subsystem isolation:** every frame-loop call is wrapped by `safe()`; a failing optional
+  subsystem (audio, items, effects, HUD) is logged once and skipped.
+
+## 6.6 Diagnostics
+
+- Host overlay: **F3** shows FPS, frame time, physics ms, render ms, long frames, update
+  rate, stale inputs, per-team RTT/p95/jitter, and the software input->applied latency.
+- `http://localhost:8080/diagnostics`: room-wide link table plus fault injection buttons
+  (20/50/100 ms delay, jitter, 3 s pause per team or all).
+- `window.__game` hooks used by the test harnesses: `eventDebug()`, `netStats()`,
+  `probeData()`, `enableProbe()`, `simulateFor(seconds)`, `skipEventCountdown()`, `send(msg)`.
+- Latency figures reported by the game are **software** numbers (input event -> applied ->
+  frame submitted). Physical input-to-photon must be measured with a high-speed camera;
+  see `EVENT_RUNBOOK.md` §5.
+
+## 6.7 Tests
+
+```bash
+npm test                                                   # Playwright: full event flow, reconnect, host controls, solo regression
+node scripts/stress.cjs --clients 6  --duration 30 --as-host   # Test A: six controllers
+node scripts/stress.cjs --clients 6  --duration 15 --frantic --as-host  # Test B: frantic input
+node scripts/stress.cjs --clients 40 --duration 30 --as-host            # Test C: 40 connections
+node scripts/stress.cjs --clients 6  --duration 20 --fault delay:100,jitter:20 --as-host  # Test D: bad Wi-Fi
+node scripts/stress.cjs --clients 2  --duration 10 --disconnect-at 4    # Test F: reconnect
+node scripts/measure-host.cjs --clients 6 --duration 30 --tag six-normal # perf + latency capture
+```

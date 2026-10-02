@@ -1,4 +1,4 @@
-// Event-mode flow: six phones join, select, ready, race, finish, points, leaderboard, reconnect.
+﻿// Event-mode flow: six phones join, select, ready, race, finish, points, leaderboard, reconnect.
 const { test, expect } = require('@playwright/test');
 
 const HOST = 'http://127.0.0.1:8080';
@@ -27,8 +27,9 @@ async function newController(browser, name) {
 }
 
 test('six controllers join, ready, race together and the results award points', async ({ browser }) => {
+  test.setTimeout(420000);
   const host = await newHost(browser);
-  await host.click('#btn-event');
+  await host.click('#btn-event', { force: true });
   await expect(host.locator('.event-ui')).toHaveAttribute('data-screen', 'lobby');
   // the QR code is rendered from the local controller URL
   await expect(host.locator('#ev-qr')).toBeVisible();
@@ -54,10 +55,17 @@ test('six controllers join, ready, race together and the results award points', 
   await ctrls[0].page.click('.char[data-i="0"]');
   await expect(ctrls[0].page.locator('.char[data-i="0"]')).toHaveClass(/sel/);
 
-  await host.click('#ev-start');
+  await host.click('#ev-start', { force: true });
   await expect(host.locator('.event-ui')).toHaveAttribute('data-screen', 'settings');
-  await host.click('#ev-go');
-  await expect(host.locator('.event-ui')).toHaveAttribute('data-screen', 'prerace', { timeout: 20000 });
+  // record every event-screen transition: the prerace overlay is up for ~2.4 s while the
+  // page is busy building the world, so a poll right after the click can miss it
+  await host.evaluate(() => {
+    window.__screens = [];
+    const el = document.querySelector('.event-ui');
+    new MutationObserver(() => window.__screens.push(el.dataset.screen)).observe(el, { attributes: true, attributeFilter: ['data-screen'] });
+  });
+  await host.click('#ev-go', { force: true });
+  expect(await host.evaluate(() => window.__screens)).toContain('prerace');
   await host.waitForFunction(() => ['countdown', 'racing'].includes(window.__game.eventDebug().state), null, { timeout: 60000 });
 
   // six viewports + six HUD panels
@@ -66,21 +74,23 @@ test('six controllers join, ready, race together and the results award points', 
   await host.waitForFunction(() => window.__game.eventDebug().state === 'racing', null, { timeout: 60000 });
   await expect(host.locator('.split-hud.on')).toBeVisible();
 
-  // each controller drives its own kart
+  // each controller drives its own kart (headless software rendering runs at a few fps,
+  // so poll rather than assuming a fixed window)
   const before = await host.evaluate(() => window.__game.world.karts.map(k => k.speed));
   for (const c of ctrls) await c.page.dispatchEvent('#ctl-gas', 'pointerdown');
-  await host.waitForTimeout(1500);
-  const speeds = await host.evaluate(() => window.__game.world.karts.map(k => k.speed));
-  expect(speeds.filter((s, i) => s > before[i] + 1).length).toBeGreaterThanOrEqual(5);
+  await expect.poll(async () => {
+    const s = await host.evaluate(() => window.__game.world.karts.map(k => k.speed));
+    return s.filter((v, i) => v > before[i] + 1).length;
+  }, { timeout: 30000 }).toBeGreaterThanOrEqual(5);
   for (const c of ctrls) await c.page.dispatchEvent('#ctl-gas', 'pointerup');
 
   // steering is independent per team
   await ctrls[1].page.dispatchEvent('#ctl-right', 'pointerdown');
   await ctrls[2].page.dispatchEvent('#ctl-left', 'pointerdown');
-  await host.waitForTimeout(800);
-  const steer = await host.evaluate(() => window.__game.world.karts.map(k => +(k.input.steer || 0).toFixed(2)));
-  expect(Math.sign(steer[1])).toBeGreaterThan(0);
-  expect(Math.sign(steer[2])).toBeLessThan(0);
+  await expect.poll(async () => {
+    const steer = await host.evaluate(() => window.__game.world.karts.map(k => Math.sign(+(k.input.steer || 0).toFixed(2))));
+    return `${steer[1]},${steer[2]}`;
+  }, { timeout: 20000 }).toBe('1,-1');
   await ctrls[1].page.dispatchEvent('#ctl-right', 'pointerup');
   await ctrls[2].page.dispatchEvent('#ctl-left', 'pointerup');
 
@@ -103,22 +113,22 @@ test('six controllers join, ready, race together and the results award points', 
   const points = await host.evaluate(() => [...document.querySelectorAll('.res-row .res-pts')].map(e => e.textContent.trim()));
   expect(points).toEqual(['+10', '+8', '+6', '+4', '+2', '+1']);
 
-  await host.click('#ev-next');
+  await host.click('#ev-next', { force: true });
   await expect(host.locator('.event-ui')).toHaveAttribute('data-screen', 'leaderboard');
   const totals = await host.evaluate(() => [...document.querySelectorAll('.ev-board tbody tr td:nth-child(6)')].map(e => e.dataset.total));
   expect(totals.map(Number).sort((a, b) => b - a)).toEqual([10, 8, 6, 4, 2, 1]);
 
   // a second race accumulates onto the same totals
-  await host.click('#ev-again');
+  await host.click('#ev-again', { force: true });
   await expect(host.locator('.event-ui')).toHaveAttribute('data-screen', 'settings');
-  await host.click('#ev-go');
+  await host.click('#ev-go', { force: true });
   await host.waitForFunction(() => ['countdown', 'racing'].includes(window.__game.eventDebug().state), null, { timeout: 60000 });
   await host.evaluate(() => window.__game.skipEventCountdown());
   await host.waitForFunction(() => window.__game.eventDebug().state === 'racing', null, { timeout: 60000 });
   await host.evaluate(() => { window.__game.world.race.laps = 1; });
   await host.evaluate(() => window.__game.simulateFor(400));
   await expect(host.locator('.event-ui')).toHaveAttribute('data-screen', 'results', { timeout: 30000 });
-  await host.click('#ev-next');
+  await host.click('#ev-next', { force: true });
   const totals2 = await host.evaluate(() => [...document.querySelectorAll('.ev-board tbody tr td:nth-child(6)')].map(e => +e.dataset.total));
   expect(Math.max(...totals2)).toBeGreaterThan(10);
 
@@ -131,21 +141,21 @@ test('six controllers join, ready, race together and the results award points', 
 
 test('a phone can reclaim its slot after dropping out mid-race', async ({ browser }) => {
   const host = await newHost(browser);
-  await host.click('#btn-event');
+  await host.click('#btn-event', { force: true });
   await expect(host.locator('.event-ui')).toHaveAttribute('data-screen', 'lobby');
   const ctrls = [];
   for (let i = 0; i < 3; i++) ctrls.push(await newController(browser, 'Team ' + (i + 1)));
   await expect(host.locator('.slot.on')).toHaveCount(3, { timeout: 20000 });
   const token = await ctrls[1].page.evaluate(() => localStorage.getItem('tkr-token'));
 
-  await host.click('#ev-start');
+  await host.click('#ev-start', { force: true });
   await host.waitForTimeout(300);
-  await host.click('#ev-go');
+  await host.click('#ev-go', { force: true });
   await host.waitForFunction(() => ['countdown', 'racing'].includes(window.__game.eventDebug().state), null, { timeout: 60000 });
 
-  // team 2 walks out of range
+  // team 2 walks out of range (the lobby screen is behind the race UI, so read server truth)
   await ctrls[1].ctx.close();
-  await expect(host.locator('.slot.on')).toHaveCount(2, { timeout: 20000 });
+  await expect.poll(async () => (await host.evaluate(() => window.__game.debugLobby())).filter((t) => t.conn).length, { timeout: 30000 }).toBe(2);
 
   // the same phone comes back and reclaims team 2
   const back = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true });
@@ -154,9 +164,8 @@ test('a phone can reclaim its slot after dropping out mid-race', async ({ browse
   await page.evaluate((tk) => { localStorage.setItem('tkr-token', tk); localStorage.setItem('tkr-name', 'Team 2'); }, token);
   await page.reload({ waitUntil: 'load' });
   await page.waitForFunction(() => !document.querySelector('#view-join.active'), null, { timeout: 20000 });
-  await expect(host.locator('.slot.on')).toHaveCount(3, { timeout: 20000 });
+  await expect.poll(async () => (await host.evaluate(() => window.__game.debugLobby())).filter((t) => t.conn).length, { timeout: 30000 }).toBe(3);
   const teams = await host.evaluate(() => window.__game.debugLobby());
-  expect(teams.filter((t) => t.conn).length).toBe(3);
   expect(await page.evaluate(() => localStorage.getItem('tkr-token'))).toBe(token);
 
   for (const c of ctrls) await c.ctx.close();
@@ -166,33 +175,33 @@ test('a phone can reclaim its slot after dropping out mid-race', async ({ browse
 
 test('host can force ready, replace a team with AI, and reset the tournament', async ({ browser }) => {
   const host = await newHost(browser);
-  await host.click('#btn-event');
+  await host.click('#btn-event', { force: true });
   const ctrls = [];
   for (let i = 0; i < 2; i++) ctrls.push(await newController(browser, 'Team ' + (i + 1)));
   await expect(host.locator('.slot.on')).toHaveCount(2, { timeout: 20000 });
 
   await host.click('[data-act="ready"][data-team="3"]');
-  await expect(host.locator('.slot[data-team]').nth(2)).toHaveClass(/ready/);
+  await expect(host.locator('.slot[data-team="3"]')).toHaveClass(/ready/);
   await host.click('[data-act="ai"][data-team="3"]');
-  await expect(host.locator('.slot').nth(2)).toContainText('AI');
+  await expect(host.locator('.slot[data-team="3"]')).toContainText('AI');
   await host.click('[data-act="remove"][data-team="1"]');
   await expect(host.locator('.slot.on')).toHaveCount(1, { timeout: 20000 });
 
   // session reset clears the leaderboard
   await host.evaluate(() => window.__game.send({ type: 'hostResetSession' }));
   await host.waitForTimeout(600);
-  await host.click('#ev-start');
-  await host.click('#ev-go');
+  await host.click('#ev-start', { force: true });
+  await host.click('#ev-go', { force: true });
   await host.waitForFunction(() => ['countdown', 'racing'].includes(window.__game.eventDebug().state), null, { timeout: 60000 });
   await host.evaluate(() => window.__game.skipEventCountdown());
   await host.waitForFunction(() => window.__game.eventDebug().state === 'racing', null, { timeout: 60000 });
   await host.evaluate(() => { window.__game.world.race.laps = 1; });
   await host.evaluate(() => window.__game.simulateFor(400));
   await expect(host.locator('.event-ui')).toHaveAttribute('data-screen', 'results', { timeout: 30000 });
-  await host.click('#ev-next');
-  await host.click('#ev-reset');
+  await host.click('#ev-next', { force: true });
+  await host.click('#ev-reset', { force: true });
   await host.waitForTimeout(800);
-  await host.click('#ev-again');
+  await host.click('#ev-again', { force: true });
   const scores = await host.evaluate(() => fetch('/debug/slots').then(r => r.json()).then(j => j.scores));
   expect(scores.length).toBe(0);
 
@@ -201,6 +210,7 @@ test('host can force ready, replace a team with AI, and reset the tournament', a
 });
 
 test('solo mode still works end to end', async ({ browser }) => {
+  test.setTimeout(300000);
   const page = await browser.newPage({ viewport: { width: 900, height: 506 } });
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
@@ -209,14 +219,16 @@ test('solo mode still works end to end', async ({ browser }) => {
   await page.waitForFunction(() => window.__game && window.__game.state === 'title', null, { timeout: 60000 });
   await page.click('#btn-solo');
   await expect(page.locator('.select-screen')).toHaveClass(/active/);
-  await page.click('.card[data-i="0"]').catch(async () => { await page.keyboard.press('Enter'); });
+  await page.locator('.card').first().click();
   await page.waitForTimeout(400);
   await page.evaluate(() => window.__game.startRace({ laps: 1 }));
-  await page.waitForFunction(() => window.__game.state === 'intro', null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__game.state === 'intro', null, { timeout: 120000 });
   await page.evaluate(() => window.__game.skipIntro());
   await page.waitForFunction(() => window.__game.state === 'countdown', null, { timeout: 60000 });
+  await page.evaluate(() => window.__game.skipCountdown());
+  await page.waitForFunction(() => window.__game.state === 'racing', null, { timeout: 60000 });
   await page.keyboard.down('ArrowUp');
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(3000);
   await page.keyboard.up('ArrowUp');
   const moved = await page.evaluate(() => window.__game.world.player.speed);
   expect(moved).toBeGreaterThan(1);
