@@ -204,6 +204,7 @@ function attach(ws, t, m) {
   t.ws = ws; ws._role = 'client'; ws._teamId = t.id;
   t.connected = true; t.sessionId = nextSession++; t.reconnectToken = m.token || Math.random().toString(36).slice(2, 10);
   t.ai = false; t.lastSeen = Date.now(); t.ready = false;
+  if (typeof m.name === 'string' && m.name.trim()) t.name = m.name.trim().slice(0, 16);
   send(ws, { type: 'joined', teamId: t.id, sessionId: t.sessionId, token: t.reconnectToken, color: TEAM_COLORS[t.colorIdx % TEAM_COLORS.length], flow: session.flow });
   broadcastLobby();
 }
@@ -211,8 +212,14 @@ function attach(ws, t, m) {
 function removeTeam(teamId) {
   const t = teams[teamId - 1];
   if (!t) return;
-  if (t.ws) { try { t.ws.close(); } catch {} }
-  t.ws = null; t.connected = false; t.ready = false; t.name = `Team ${t.id}`; t.ai = false;
+  if (t.ws) {
+    const ws = t.ws;
+    t.ws = null;
+    // tell the phone it was removed so it does not silently grab the slot again
+    try { ws.send(JSON.stringify({ type: 'removed' })); } catch {}
+    setTimeout(() => { try { ws.close(); } catch {} }, 120);
+  }
+  t.connected = false; t.ready = false; t.name = `Team ${t.id}`; t.ai = false; t.reconnectToken = null;
   broadcastLobby();
 }
 function resumeTeam(teamId) { const t = teams[teamId - 1]; if (t) { t.ai = false; broadcastLobby(); } }

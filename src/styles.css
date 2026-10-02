@@ -545,7 +545,12 @@ button { font: inherit; color: inherit; }
 /* split HUD */
 .split-hud { position: absolute; inset: 0; pointer-events: none; display: none; }
 .split-hud.on { display: block; }
-.sp-panel { position: absolute; padding: 6px 10px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.7); font-family: inherit; }
+.sp-panel { position: absolute; padding: 6px 10px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.85); font-family: inherit; overflow: hidden; }
+/* readability scrim + viewport frame: the HUD has to stay legible over bright track scenery */
+.sp-panel::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(2,4,14,.55) 0%, rgba(2,4,14,0) 26%, rgba(2,4,14,0) 72%, rgba(2,4,14,.42) 100%);
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.06); }
+.sp-panel > * { position: relative; }
 .sp-panel[data-slot="full"] { inset: 0; }
 .sp-panel[data-slot="halfL"] { left: 0; top: 0; width: 50%; height: 100%; }
 .sp-panel[data-slot="halfR"] { right: 0; top: 0; width: 50%; height: 100%; }
@@ -569,6 +574,14 @@ button { font: inherit; color: inherit; }
 .sp-speed { position: absolute; bottom: 12px; left: 10px; width: 60%; height: 8px; background: rgba(255,255,255,.15); border-radius: 99px; overflow: hidden; }
 .sp-speed i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg,#43a047,#fdd835,#e53935); border-radius: 99px; transition: width .12s; }
 .sp-panel.warn .sp-pos { color: #ff5252; }
+.split-hud.broadcast .sp-panel.bc-hidden { display: none; }
+.bc-board { position: absolute; top: 12px; right: 12px; width: 210px; background: rgba(4,8,20,.78); border: 1px solid #2a3050; border-radius: 14px; padding: 10px 12px; }
+.bc-title { font-size: 11px; letter-spacing: 3px; color: #8892b0; margin-bottom: 6px; }
+.bc-row { display: flex; align-items: center; gap: 8px; font-size: 15px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+.bc-row:last-child { border-bottom: 0; }
+.bc-row b { color: var(--tc, #ffd835); font-weight: 900; width: 34px; }
+.bc-row span { flex: 1; font-weight: 700; }
+.bc-row i { color: #8892b0; font-style: normal; font-size: 12px; }
 
 /* event banner */
 .event-banner { position: absolute; top: 30%; left: 0; right: 0; text-align: center; font-size: 110px; font-weight: 900; letter-spacing: 8px; color: #fff; text-shadow: 0 6px 30px rgba(0,0,0,.8); opacity: 0; pointer-events: none; }

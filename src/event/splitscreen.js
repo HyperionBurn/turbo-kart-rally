@@ -13,7 +13,12 @@ const LAYOUTS = {
   6: [[0, 0, 1 / 3, 0.5], [1 / 3, 0, 1 / 3, 0.5], [2 / 3, 0, 1 / 3, 0.5], [0, 0.5, 1 / 3, 0.5], [1 / 3, 0.5, 1 / 3, 0.5], [2 / 3, 0.5, 1 / 3, 0.5]],
 };
 
-const PIXEL_TIERS = [2, 1.5, 1.25, 1, 0.85, 0.7];
+// Render-scale tiers. We deliberately do NOT touch renderer.setPixelRatio: the canvas is
+// always sized by CSS to the window, and only the drawing buffer shrinks, so the browser
+// scales the image back up. That keeps viewport maths exact and avoids the classic
+// "canvas CSS size vs drawing buffer size" mismatch that produces partial frames.
+const SCALE_TIERS = [1, 0.85, 0.75, 0.65, 0.55, 0.45];
+const _size = new THREE.Vector2();
 
 export class SplitScreen {
   constructor(renderer, ChaseCameraClass) {
@@ -50,16 +55,18 @@ export class SplitScreen {
   /** Render every viewport. scene: shared THREE.Scene. */
   render(scene, broadcast) {
     const r = this.renderer;
-    const w = r.domElement.width, h = r.domElement.height;
+    // always work in drawing-buffer pixels: the adaptive tier may have changed the ratio
+    r.getDrawingBufferSize(_size);
+    const w = Math.max(1, Math.floor(_size.x)), h = Math.max(1, Math.floor(_size.y));
     r.setScissorTest(true);
     r.setClearColor(0x0b0e1a, 1);
     if (broadcast) {
       const c = this.cams[this.broadcastIndex];
+      r.setViewport(0, 0, w, h); r.setScissor(0, 0, w, h);
       if (c) {
         c.camera.aspect = w / h; c.camera.updateProjectionMatrix();
-        r.setViewport(0, 0, w, h); r.setScissor(0, 0, w, h);
         r.clear(); r.render(scene, c.camera);
-      }
+      } else r.clear();
       r.setScissorTest(false);
       return;
     }
@@ -85,7 +92,7 @@ export class SplitScreen {
     if (this.frameTimes.length < 60) return;
     const sorted = this.frameTimes.slice().sort((a, b) => a - b);
     const p95 = sorted[(p95Idx(sorted.length))];
-    if (p95 > 21 && this.tierIndex < PIXEL_TIERS.length - 1) {
+    if (p95 > 21 && this.tierIndex < SCALE_TIERS.length - 1) {
       this.tierIndex++;
       this._applyTier();
     } else if (p95 < 13 && this.tierIndex > 0 && !this._locked) {
@@ -94,10 +101,19 @@ export class SplitScreen {
     }
   }
   _applyTier() {
-    const dpr = Math.min(window.devicePixelRatio || 1, PIXEL_TIERS[this.tierIndex]);
-    this.renderer.setPixelRatio(dpr);
-    this.renderer.setSize(window.innerWidth, window.innerHeight, false);
-    bus.emit('split:quality', { tier: this.tierIndex, dpr });
+    const scale = SCALE_TIERS[this.tierIndex];
+    const w = Math.max(320, Math.round(window.innerWidth * scale));
+    const h = Math.max(180, Math.round(window.innerHeight * scale));
+    this.renderer.setSize(w, h, false);   // updateStyle=false: CSS keeps the canvas full-window
+    bus.emit('split:quality', { tier: this.tierIndex, scale });
+  }
+  /** Broadcast mode is a single full-screen view: give it the top tier, no downscaling. */
+  setBroadcastMode(on) {
+    if (this.broadcastMode === on) return;
+    this.broadcastMode = on;
+    this.tierIndex = 0;
+    this.frameTimes.length = 0;
+    this._applyTier();
   }
   dispose() {
     for (const c of this.cams) { try { c.chase && c.chase.dispose && c.chase.dispose(); } catch {} }

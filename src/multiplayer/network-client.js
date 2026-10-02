@@ -14,6 +14,7 @@ export class HostNetworkClient {
     this.latchedEdges = new Map(); // teamId -> {item, hop, pause}
     this.handshakeOk = false;
     this.stats = new LinkStats();
+    this.teamStats = new Map();   // per-team link statistics (sequences are per client)
     this.clock = new ClockSync();
     this.lastLobby = null;
     this.hostNowOffset = 0; // server - host estimate for timestamp translation
@@ -58,7 +59,8 @@ export class HostNetworkClient {
       const now = performance.now();
       const msg = decodeInput(e.data);
       if (!msg) return;
-      this.stats.addUpdate(msg.seq);
+      const ts = this._teamStats(msg.teamId);
+      ts.addUpdate(msg.seq);
       const prev = this.latest.get(msg.teamId);
       if (prev && msg.sessionId !== prev.sessionId) {
         // a phone that reconnected starts a new session with a fresh sequence counter:
@@ -66,10 +68,10 @@ export class HostNetworkClient {
         if (msg.sessionId < prev.sessionId) return;
         this.latest.delete(msg.teamId);
         this.latchedEdges.delete(msg.teamId);
-        this.stats.outOfOrder = 0; this.stats.dropped = 0; this.stats.lastSeq = -1;
+        ts.outOfOrder = 0; ts.dropped = 0; ts.lastSeq = -1;
       }
       const team = this.latest.get(msg.teamId);
-      if (team && msg.seq < team.seq) { this.stats.dropped++; return; }
+      if (team && msg.seq < team.seq) { ts.dropped++; return; }
       const edges = { item: false, hop: false, pause: false };
       const f = msg.flags;
       if (f & 4) edges.item = true;
@@ -88,6 +90,30 @@ export class HostNetworkClient {
       if (this.receiveLog.length > 64) this.receiveLog.shift();
       bus.emit('net:input', { teamId: msg.teamId, seq: msg.seq });
     }
+  }
+
+  /** Per-team statistics — sequence numbers are per client, so they must not be mixed. */
+  _teamStats(teamId) {
+    let s = this.teamStats.get(teamId);
+    if (!s) { s = new LinkStats(); this.teamStats.set(teamId, s); }
+    return s;
+  }
+
+  /** Aggregate view used by the overlay and the measurement harness. */
+  aggregateStats() {
+    const teams = [...this.teamStats.values()];
+    if (!teams.length) return this.stats.snapshot();
+    let rate = 0, dropped = 0, ooo = 0, p95 = 0, p50 = 0, rtt = 0, jitter = 0;
+    for (const s of teams) {
+      rate += s.rate; dropped += s.dropped; ooo += s.outOfOrder;
+      p95 = Math.max(p95, s.p95); p50 = Math.max(p50, s.p50);
+      rtt += s.currentRtt; jitter += s.jitter;
+    }
+    return {
+      rtt: rtt / teams.length, p50, p95, p99: p95,
+      jitter: jitter / teams.length, rate: Math.round(rate),
+      outOfOrder: ooo, dropped, disconnects: 0, reconnects: 0, teams: teams.length,
+    };
   }
 
   _onJson(m) {

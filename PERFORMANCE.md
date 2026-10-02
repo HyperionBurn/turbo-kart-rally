@@ -34,9 +34,12 @@ Measured with `node scripts/measure-host.cjs --clients 6 --duration 30 --tag six
 
 | metric | p50 | p95 | p99 | max |
 | --- | --- | --- | --- | --- |
-| frame time | 2629 ms | 2848 ms | 2848 ms | 2848 ms |
-| physics step (all 6 karts + items + race logic) | 0.8 ms | 1.4 ms | 1.4 ms | 1.4 ms |
-| render submit (6 × `setViewport`/`setScissor` + 6 `render()`) | 13.8 ms | 16.0 ms | 16.0 ms | 16.0 ms |
+| frame time | 2253 ms | 2463 ms | 2463 ms | 2463 ms |
+| physics step (all 6 karts + items + race logic) | 0.7 ms | 1.3 ms | 1.3 ms | 1.3 ms |
+| render submit (6 × `setViewport`/`setScissor` + 6 `render()`) | 9.0 ms | 16.3 ms | 16.3 ms | 16.3 ms |
+
+Network counters for the same run (`netStats()`): 6 team links, 139 input updates/s received,
+**0 out-of-order, 0 stale packets dropped**, clock offset 0 ms.
 
 Same scene in **broadcast mode** (one full-screen camera, `docs/measurements/six-broadcast.json`):
 
@@ -47,10 +50,10 @@ Same scene in **broadcast mode** (one full-screen camera, `docs/measurements/six
 | render submit | 4.0 ms | 4.8 ms | 4.9 ms | 4.9 ms |
 
 **What this proves (and what it does not).** Split-screen cost scales with the number of
-viewports: 1 camera = 568 ms/frame, 6 cameras = 2629 ms/frame (4.6×) in software
+viewports: 1 camera = 568 ms/frame, 6 cameras = 2253 ms/frame (4.0×) in software
 rasterisation. The CPU-side work the game itself owns — physics for six karts with items,
-collisions, lap logic, input application and HUD updates — is **0.8 ms per 60 Hz tick
-(p95 1.4 ms)**, i.e. ~8 % of a 16.7 ms budget, leaving ~15 ms for rasterisation on real
+collisions, lap logic, input application and HUD updates — is **0.7 ms per 60 Hz tick
+(p95 1.3 ms)**, i.e. ~8 % of a 16.7 ms budget, leaving ~15 ms for rasterisation on real
 hardware. On a GPU that rasterises 1280×720 six times per frame at 60 fps, this is
 comfortably inside budget; the same measurement on a GPU-less machine shows exactly where
 the remaining time goes (rasterisation), which is the only conclusion this environment can
@@ -138,8 +141,11 @@ Each of these was added because the measurement or the profile pointed at it:
 7. **Batched relay log (500 ms)** instead of per-packet server annotations: full pipeline
    tracing without adding hot-path messages.
 8. **Adaptive render scale.** `SplitScreen.observeFrame()` watches p95 frame time and steps
-   the renderer pixel ratio down (2 → 1.5 → 1.25 → 1 → 0.85 → 0.7) when frames run long, and
-   back up when there is headroom. The physics tick rate is never reduced.
+   the *drawing buffer* down (1 → 0.85 → 0.75 → 0.65 → 0.55 → 0.45 of window size) when
+   frames run long, and back up when there is headroom. Deliberately **not** `setPixelRatio`:
+   the canvas is sized by CSS to the window, so shrinking only the buffer keeps viewport
+   arithmetic exact (an earlier pixel-ratio version rendered a partial frame — caught by the
+   screenshot pass, not by a unit test). The physics tick rate is never reduced.
 9. **DOM diffing in the lobby** — lobby and session states are compared by signature, and
    only changed numbers (ping, battery) are patched in place, so the projector screen does
    not rebuild itself every second (and buttons do not detach under a mouse).
@@ -179,3 +185,8 @@ resolution (render scale adapts on its own).
   the 60 Hz simulation can consume.
 - **Adaptive quality only changes render resolution.** It does not yet drop shadows or
   particle density; those are the next levers if a venue machine needs them.
+- **Split-screen frame capture is screenshot-bound in software rendering.** On this GPU-less
+  machine a 1280×720 six-viewport frame takes ~2.3 s to rasterise, so an automated
+  screenshot can catch a partially presented frame; on real hardware at 16.7 ms/frame this
+  does not occur. `scripts/shots.cjs` writes the documentation screenshots with a settle
+  delay for that reason.

@@ -42,6 +42,8 @@ renderer.toneMappingExposure = 1.0;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// keep the drawing buffer equal to the window; the event renderer scales the buffer instead
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 3000);
 camera.position.set(0, 30, 60);
@@ -62,7 +64,8 @@ function onResize() {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(w, h, false);
+  // in event mode the split renderer owns the buffer size (render-scale tier)
+  if (split) split._applyTier(); else renderer.setSize(w, h, false);
   composer.setSize(w, h);
   bloom.setSize(w, h);
 }
@@ -864,6 +867,16 @@ function frame() {
       }
       safe('audio.update', () => audio.update(dt, { player: null, karts: w.karts, camera }));
       const broadcast = (eventSession && eventSession.settings && eventSession.settings.cameraMode === 'broadcast');
+      safe('split.broadcastMode', () => split.setBroadcastMode(!!broadcast));
+      if (splitHud.broadcast !== !!broadcast) {
+        // follow the leader in broadcast mode so the single camera stays interesting
+        if (broadcast) {
+          const standings = world.race && world.race.standings ? world.race.standings : world.karts;
+          const lead = standings.find((k) => k.teamId > 0) || world.karts[0];
+          split.broadcastIndex = Math.max(0, world.karts.indexOf(lead));
+        }
+        splitHud.setBroadcast(!!broadcast, world.karts, world.race);
+      }
       // shadow maps must be refreshed at most once per displayed frame even with six viewports
       renderer.shadowMap.autoUpdate = false;
       renderer.shadowMap.needsUpdate = true;
@@ -942,10 +955,11 @@ function updateLatencyOverlay(frameMs) {
   // what the adaptive quality controller and the measurement harness rely on.
   const r = eventRadar;
   r.frameMsEma = r.frameMsEma ? r.frameMsEma + (frameMs - r.frameMsEma) * 0.12 : frameMs;
-  r.lastFps = Math.round(1000 / Math.max(0.5, r.frameMsEma));
+  r.lastFps = 1000 / Math.max(0.5, r.frameMsEma);
+  r.lastFpsText = r.lastFps >= 10 ? String(Math.round(r.lastFps)) : r.lastFps.toFixed(1);
   if (!latencyOn) return;
   ensureLatencyEl().classList.add('on');
-  const s = netClient ? netClient.stats.snapshot() : null;
+  const s = netClient ? netClient.aggregateStats() : null;
   const teams = (eventLobby && eventLobby.teams) || [];
   const rows = teams.map((t) => `<div class="lr"><span>P${t.id}</span><b class="${t.p95 <= 30 ? 'good' : t.p95 <= 60 ? 'warn' : 'bad'}">${t.ping || '--'}ms / p95 ${t.p95 || '--'} / j ${Math.round(t.jitter || 0)}</b></div>`).join('');
   // software input -> applied latency estimate for most recent packet per team
@@ -963,7 +977,7 @@ function updateLatencyOverlay(frameMs) {
     if (n) inLat = `${Math.round(total / n)} ms`;
   }
   latencyEl.innerHTML = `
-    <div class="lr"><span>FPS</span><b>${eventRadar.lastFps}</b></div>
+    <div class="lr"><span>FPS</span><b>${eventRadar.lastFpsText || eventRadar.lastFps}</b></div>
     <div class="lr"><span>frame</span><b>${frameMs.toFixed(1)} ms</b></div>
     <div class="lr"><span>physics</span><b>${eventRadar.physicsMs.toFixed(1)} ms</b></div>
     <div class="lr"><span>render</span><b>${eventRadar.renderMs.toFixed(1)} ms</b></div>
@@ -1053,8 +1067,28 @@ window.__game = {
     w.race.countdownTime = 99;
     return true;
   },
-  netStats: () => netClient && ({ stats: netClient.stats.snapshot(), clockOffset: netClient.clock.offset, connected: netClient.connected, lobbyPing: eventLobby && eventLobby.teams.map((t) => ({ id: t.id, ping: t.ping, p95: t.p95, jitter: t.jitter })) }),
+  netStats: () => netClient && ({ stats: netClient.aggregateStats(), perTeam: Object.fromEntries([...netClient.teamStats].map(([id, s]) => [id, s.snapshot()])), clockOffset: netClient.clock.offset, connected: netClient.connected, lobbyPing: eventLobby && eventLobby.teams.map((t) => ({ id: t.id, ping: t.ping, p95: t.p95, jitter: t.jitter })) }),
   debugLobby: () => eventLobby && eventLobby.teams.map((t) => ({ id: t.id, ai: t.ai, conn: t.connected, sessionId: t.sessionId })),
+  sessionSettings: () => (eventSession && eventSession.settings) || null,
+  manualRender: () => {
+    const w = world; if (!w || !split || !split.cams.length) return 'no-world';
+    const r = renderer, size = new THREE.Vector2();
+    r.getDrawingBufferSize(size);
+    r.setScissorTest(false);
+    r.setViewport(0, 0, size.x, size.y);
+    r.setClearColor(0x102030, 1);
+    r.clear();
+    r.render(w.scene, split.cams[split.broadcastIndex].camera);
+    return { w: size.x, h: size.y, calls: r.info.render.calls };
+  },
+  splitDebug: () => split && ({
+    cams: split.cams.length, index: split.broadcastIndex, tier: split.tierIndex,
+    broadcast: !!split.broadcastMode,
+    cam0: split.cams[split.broadcastIndex] ? {
+      pos: split.cams[split.broadcastIndex].camera.position.toArray().map((v) => +v.toFixed(1)),
+      kart: split.cams[split.broadcastIndex].kart && split.cams[split.broadcastIndex].kart.position.toArray().map((v) => +v.toFixed(1)),
+    } : null,
+  }),
   /** Debug/test: advance the fixed-step simulation without waiting for frames. */
   simulateFor(seconds) {
     const w = world; if (!w) return 0;

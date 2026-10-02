@@ -66,8 +66,34 @@ export class SplitHUD {
 
   show() { this.el.classList.add('on'); }
   hide() { this.el.classList.remove('on'); }
+
+  /** Broadcast camera mode: one cinematic view + a full standings strip instead of six panels. */
+  setBroadcast(on, karts, race) {
+    this.broadcast = !!on;
+    this.el.classList.toggle('broadcast', this.broadcast);
+    if (this.broadcast) {
+      if (!this.board) {
+        this.board = document.createElement('div');
+        this.board.className = 'bc-board';
+        this.el.appendChild(this.board);
+      }
+      this.panels.forEach((p, i) => p.classList.toggle('bc-hidden', i !== 0));
+      this.panels[0].dataset.slot = 'full';
+      const rows = (karts || []).map((k) => {
+        const t = this.teams && this.teams[k.teamId - 1];
+        const color = t ? t.color : '#888';
+        return `<div class="bc-row" style="--tc:${color}"><b>${ord(k.place || 1)}</b><span>${t ? t.name : ''}</span><i>L${Math.min(k.lap || 1, race ? race.laps : 3)}</i></div>`;
+      }).join('');
+      this.board.innerHTML = `<div class="bc-title">STANDINGS</div>${rows}`;
+    } else {
+      if (this.board) this.board.innerHTML = '';
+      this.panels.forEach((p) => p.classList.remove('bc-hidden'));
+      this.layout();
+    }
+  }
   dispose() { this.el.remove(); }
 }
 function itemShort(id) {
   return ({ mushroom: '🍄', triple_mushroom: '🍄×3', banana: '🍌', green_shell: '🟢', red_shell: '🔴', star: '⭐', lightning: '⚡', blue_shell: '🔵' })[id] || '';
 }
+function ord(n) { return ['1st', '2nd', '3rd', '4th', '5th', '6th'][n - 1] || `${n}th`; }

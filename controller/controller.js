@@ -46,6 +46,15 @@ function onMessage(m) {
       break;
     case 'spectating': $('join-status').textContent = 'Lobby full — spectating.'; break;
     case 'selectDenied': buzz(60); break;
+    case 'removed': {
+      // the host dropped this slot: forget the token and go back to the join screen
+      state.token = null; state.teamId = 0; state.ready = false;
+      localStorage.removeItem('tkr-token');
+      try { state.ws.close(); } catch {}
+      showView('join');
+      $('join-status').textContent = 'The host removed your team — tap JOIN to re-enter.';
+      break;
+    }
     case 'lobby':
       state.flow = m.state.flow;
       const me = m.state.teams.find((t) => t.id === state.teamId);
