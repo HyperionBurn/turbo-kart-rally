@@ -1,7 +1,7 @@
-// Reconnect drill: disconnect controller 3 mid-race, verify its slot goes AI,
+﻿// Reconnect drill: disconnect controller 3 mid-race, verify its slot goes AI,
 // then reconnect with the stored token and verify the slot comes back to the same team.
 const { chromium } = require('playwright');
-const HOST = 'http://127.0.0.1:8080';
+const HOST = 'http://127.0.0.1:8081';
 
 (async () => {
   const b = await chromium.launch();

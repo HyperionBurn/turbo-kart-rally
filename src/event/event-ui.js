@@ -42,7 +42,7 @@ export class EventUI {
     if (this.screen === 'lobby') this.render();
   }
   setSession(state) {
-    const sig = JSON.stringify([state.flow, state.raceIndex, state.settings, (state.scores || []).map((s) => [s.teamId, s.total, s.wins]), state.lastResults && state.lastResults.length]);
+    const sig = JSON.stringify([state.flow, state.raceIndex, state.settings, (state.scores || []).map((s) => [s.teamId, s.total, s.wins]), state.lastResults && state.lastResults.length, state.controllerUrl]);
     const changed = this._sessionSig !== sig;
     this._sessionSig = sig;
     const keepLocal = this.session;
@@ -75,6 +75,8 @@ export class EventUI {
           <div class="ev-kicker">SCAN TO PLAY</div>
           <canvas id="ev-qr" width="220" height="220"></canvas>
           <div class="ev-url">${s.controllerUrl || ''}</div>
+          ${s.lanWarning ? '<div class="ev-url warn">NO LAN IP FOUND — plug in Ethernet/hotspot, or type this URL on the phones</div>' : ''}
+          ${s.altUrls && s.altUrls.length ? `<div class="ev-url alt">other interfaces: ${s.altUrls.join('  ')}</div>` : ''}
           <div class="ev-sub">${connected}/6 CONNECTED · ${ready} READY</div>
           <button id="ev-start" class="btn primary big">CONTINUE → SETTINGS</button>
           <button id="ev-solo" class="btn ghost">← SOLO MODE</button>

@@ -5,7 +5,7 @@
   const errs = [];
   p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
   p.on('pageerror', e => errs.push('PAGEERROR: ' + e.message));
-  await p.goto('http://127.0.0.1:8080/', { waitUntil: 'load' });
+  await p.goto('http://127.0.0.1:8081/', { waitUntil: 'load' });
   await p.waitForTimeout(4000);
   console.log('state:', await p.evaluate(() => window.__game && window.__game.state));
   console.log('errors:', errs.slice(0,10));

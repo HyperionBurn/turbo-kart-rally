@@ -9,7 +9,7 @@ fs.mkdirSync(OUT, { recursive: true });
 (async () => {
   const b = await chromium.launch();
   const host = await b.newPage({ viewport: { width: 1280, height: 720 } });
-  await host.goto('http://127.0.0.1:8080/', { waitUntil: 'load' });
+  await host.goto('http://127.0.0.1:8081/', { waitUntil: 'load' });
   await host.waitForFunction(() => window.__game && window.__game.state === 'title', null, { timeout: 60000 });
   await host.click('#btn-event', { force: true });
   await host.evaluate(() => window.__game.send({ type: 'hostResetSession' }));
@@ -20,7 +20,7 @@ fs.mkdirSync(OUT, { recursive: true });
   for (let i = 0; i < 6; i++) {
     const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true });
     const p = await ctx.newPage();
-    await p.goto('http://127.0.0.1:8080/controller', { waitUntil: 'load' });
+    await p.goto('http://127.0.0.1:8081/controller', { waitUntil: 'load' });
     await p.waitForLoadState('load').catch(() => {});
     if (i === 0) { await p.screenshot({ path: path.join(OUT, '00-controller-join.png'), animations: 'disabled', caret: 'initial' }).catch(() => {}); }
     await p.fill('#name-input', ['CRIMSON', 'AZURE', 'JADE', 'GOLD', 'ORCHID', 'TANGERINE'][i]);

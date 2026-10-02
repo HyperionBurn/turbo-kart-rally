@@ -1,9 +1,9 @@
-# Turbo Kart Rally
+﻿# Turbo Kart Rally
 
 **An arcade kart racer in the spirit of Mario Kart, built entirely with Three.js. Every mesh, texture, sound effect and music track is generated in code at load time. There are no asset files and no build step.**
 
 **Now also a six-player party racer.** Run one command, project it on a wall, and six teams
-scan a QR code with their phones and race each other on a true 3×2 split screen — no app,
+scan a QR code with their phones and race each other on a true 3Ã—2 split screen â€” no app,
 no install, no accounts. See [`EVENT_RUNBOOK.md`](EVENT_RUNBOOK.md) for the event-day checklist.
 
 ```bash
@@ -12,9 +12,9 @@ npm start
 ```
 
 ```
-HOST:        http://localhost:8080
+HOST:        http://localhost:8081
 LAN:         http://192.168.x.x:8080      <- phones scan the QR code on screen
-Diagnostics: http://localhost:8080/diagnostics
+Diagnostics: http://localhost:8081/diagnostics
 ```
 
 <p align="center">
@@ -22,7 +22,7 @@ Diagnostics: http://localhost:8080/diagnostics
 </p>
 
 <p align="center">
-  <a href="https://bridge-mind.github.io/turbo-kart-rally/"><strong>▶ Play the solo game in your browser</strong></a>
+  <a href="https://bridge-mind.github.io/turbo-kart-rally/"><strong>â–¶ Play the solo game in your browser</strong></a>
 </p>
 
 ## Two modes
@@ -33,9 +33,9 @@ drivers. Keyboard or gamepad.
 **Event mode** (six players on one laptop):
 
 ```text
-title → EVENT MODE → lobby with QR + room code → six phones join, pick racers, READY
-      → race settings → prerace flyover → 3-2-1-GO → 3×2 split-screen race
-      → results → event points → session leaderboard → next race / rematch
+title â†’ EVENT MODE â†’ lobby with QR + room code â†’ six phones join, pick racers, READY
+      â†’ race settings â†’ prerace flyover â†’ 3-2-1-GO â†’ 3Ã—2 split-screen race
+      â†’ results â†’ event points â†’ session leaderboard â†’ next race / rematch
 ```
 
 - Six human-controlled teams, each with its own name, colour, racer and ready state.
@@ -43,13 +43,13 @@ title → EVENT MODE → lobby with QR + room code → six phones join, pick rac
   authoritatively on the host machine; phones send 24-byte input packets at 30 Hz.
 - Disconnects degrade gracefully: the kart coasts, the slot shows RECONNECTING, the host can
   hand the slot to AI after 15 s, and the same phone reclaims its team automatically when it
-  comes back — mid-race, without restarting.
+  comes back â€” mid-race, without restarting.
 - Points accumulate across races for the whole session; the leaderboard animates the totals.
 
 ## Controls
 
 Solo: keyboard or gamepad as before (see the table further down).
-Phones: landscape pad — left/right steer, GAS, BRAKE, DRIFT, ITEM, LOOK.
+Phones: landscape pad â€” left/right steer, GAS, BRAKE, DRIFT, ITEM, LOOK.
 
 ## Play (solo, online)
 
@@ -70,11 +70,11 @@ The orchestrating agent wrote an architecture contract first ([ARCHITECTURE.md](
 
 | Agent | Owns | Delivers |
 | --- | --- | --- |
-| 1 · World | `track.js`, `environment.js`, `track-textures.js` | Procedural circuit, barriers, boost pads, jump ramps, water, sky, scenery, grandstands, lighting |
-| 2 · Driving | `kart.js`, `ai.js`, `input.js` | Arcade kart physics, drift and mini-turbo, AI drivers, keyboard and gamepad input |
-| 3 · Items and FX | `items.js`, `effects.js` | Item boxes, roulette and eight items, pooled particle effects |
-| 4 · Art and camera | `models.js`, `camera.js` | Karts, drivers, item models, portraits, chase camera |
-| 5 · Game and UI | `main.js`, `race.js`, `hud.js`, `menu.js`, `audio.js`, `styles.css` | Game loop, race manager, HUD, menus, results, procedural audio and music |
+| 1 Â· World | `track.js`, `environment.js`, `track-textures.js` | Procedural circuit, barriers, boost pads, jump ramps, water, sky, scenery, grandstands, lighting |
+| 2 Â· Driving | `kart.js`, `ai.js`, `input.js` | Arcade kart physics, drift and mini-turbo, AI drivers, keyboard and gamepad input |
+| 3 Â· Items and FX | `items.js`, `effects.js` | Item boxes, roulette and eight items, pooled particle effects |
+| 4 Â· Art and camera | `models.js`, `camera.js` | Karts, drivers, item models, portraits, chase camera |
+| 5 Â· Game and UI | `main.js`, `race.js`, `hud.js`, `menu.js`, `audio.js`, `styles.css` | Game loop, race manager, HUD, menus, results, procedural audio and music |
 
 `src/config.js` (roster, physics tuning, items, difficulty, key bindings) and `src/events.js` (the event bus) were written before the sub-agents started.
 
@@ -113,7 +113,7 @@ npm install       # three.js (vendored locally), ws, playwright for tests
 npm start         # host + controllers + diagnostics on one port
 ```
 
-Then open **http://localhost:8080**. Three.js r170 is served from `node_modules` through an
+Then open **http://localhost:8081**. Three.js r170 is served from `node_modules` through an
 import map, so no internet connection is needed at the venue. The terminal prints the
 localhost URL, every LAN URL it can find, and the diagnostics URL.
 
@@ -129,7 +129,7 @@ node scripts/measure-host.cjs --clients 6 --duration 30 --tag six-normal   # fra
 ```
 
 Press **F3** on the host page for the live latency overlay (FPS, frame time, physics,
-render, per-team RTT/p95/jitter, stale inputs). `http://localhost:8080/diagnostics` shows the
+render, per-team RTT/p95/jitter, stale inputs). `http://localhost:8081/diagnostics` shows the
 room-wide link table and fault-injection controls. Measured numbers live in
 [`PERFORMANCE.md`](PERFORMANCE.md).
 
@@ -137,49 +137,49 @@ room-wide link table and fault-injection controls. Measured numbers live in
 
 ```
 turbo-kart-rally/
-├── index.html            entry page and import map
-├── ARCHITECTURE.md       module contract + event-mode design (section 6)
-├── EVENT_RUNBOOK.md      event-day setup checklist and emergency fallbacks
-├── PERFORMANCE.md        measured frame/render/latency numbers and limits
-├── server/
-│   └── server.js         static host + controller/host WebSockets, rooms, sessions, diagnostics
-├── controller/
-│   ├── index.html        phone controller (join, racer select, ready, race pad)
-│   ├── controller.js     pointer-event input, 30 Hz packets, reconnect token
-│   └── controller.css    landscape layout
-├── diagnostics/
-│   └── index.html        room-wide link table + fault injection
-├── src/
-│   ├── main.js           renderer, post-processing, state machine, fixed-step loop, event mode
-│   ├── config.js         roster, physics tuning, items, difficulty, key bindings
-│   ├── events.js         shared event bus
-│   ├── track.js          circuit, surfaces, walls, racing line
-│   ├── environment.js    sky, lights, water, terrain, scenery
-│   ├── kart.js           kart physics
-│   ├── ai.js             AI drivers
-│   ├── input.js          keyboard and gamepad
-│   ├── items.js          item boxes, roulette, items
-│   ├── effects.js        particles and bursts
-│   ├── models.js         karts, drivers, item models, portraits
-│   ├── camera.js         chase camera
-│   ├── race.js           laps, positions, countdown, finish
-│   ├── hud.js            in-race HUD and results
-│   ├── menu.js           title, character select, pause
-│   ├── audio.js          Web Audio sound and music
-│   ├── styles.css        UI styling
-│   ├── multiplayer/
-│   │   ├── protocol.js       24-byte binary input frame
-│   │   ├── latency.js        clock sync, RTT/jitter statistics
-│   │   └── network-client.js host socket, latest-state semantics
-│   └── event/
-│       ├── splitscreen.js    six scissored viewports, adaptive quality
-│       ├── split-hud.js      compact per-viewport HUD
-│       └── event-ui.js       lobby / settings / prerace / results / leaderboard
-├── scripts/              stress, measurement and manual end-to-end harnesses
-├── tests/                Playwright suite (event flow, reconnect, solo regression)
-├── docs/measurements/    raw JSON captured by scripts/measure-host.cjs
-├── dev/                  per-module test harnesses from the original build
-└── docs/screenshots/     images used in this README
+â”œâ”€â”€ index.html            entry page and import map
+â”œâ”€â”€ ARCHITECTURE.md       module contract + event-mode design (section 6)
+â”œâ”€â”€ EVENT_RUNBOOK.md      event-day setup checklist and emergency fallbacks
+â”œâ”€â”€ PERFORMANCE.md        measured frame/render/latency numbers and limits
+â”œâ”€â”€ server/
+â”‚   â””â”€â”€ server.js         static host + controller/host WebSockets, rooms, sessions, diagnostics
+â”œâ”€â”€ controller/
+â”‚   â”œâ”€â”€ index.html        phone controller (join, racer select, ready, race pad)
+â”‚   â”œâ”€â”€ controller.js     pointer-event input, 30 Hz packets, reconnect token
+â”‚   â””â”€â”€ controller.css    landscape layout
+â”œâ”€â”€ diagnostics/
+â”‚   â””â”€â”€ index.html        room-wide link table + fault injection
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ main.js           renderer, post-processing, state machine, fixed-step loop, event mode
+â”‚   â”œâ”€â”€ config.js         roster, physics tuning, items, difficulty, key bindings
+â”‚   â”œâ”€â”€ events.js         shared event bus
+â”‚   â”œâ”€â”€ track.js          circuit, surfaces, walls, racing line
+â”‚   â”œâ”€â”€ environment.js    sky, lights, water, terrain, scenery
+â”‚   â”œâ”€â”€ kart.js           kart physics
+â”‚   â”œâ”€â”€ ai.js             AI drivers
+â”‚   â”œâ”€â”€ input.js          keyboard and gamepad
+â”‚   â”œâ”€â”€ items.js          item boxes, roulette, items
+â”‚   â”œâ”€â”€ effects.js        particles and bursts
+â”‚   â”œâ”€â”€ models.js         karts, drivers, item models, portraits
+â”‚   â”œâ”€â”€ camera.js         chase camera
+â”‚   â”œâ”€â”€ race.js           laps, positions, countdown, finish
+â”‚   â”œâ”€â”€ hud.js            in-race HUD and results
+â”‚   â”œâ”€â”€ menu.js           title, character select, pause
+â”‚   â”œâ”€â”€ audio.js          Web Audio sound and music
+â”‚   â”œâ”€â”€ styles.css        UI styling
+â”‚   â”œâ”€â”€ multiplayer/
+â”‚   â”‚   â”œâ”€â”€ protocol.js       24-byte binary input frame
+â”‚   â”‚   â”œâ”€â”€ latency.js        clock sync, RTT/jitter statistics
+â”‚   â”‚   â””â”€â”€ network-client.js host socket, latest-state semantics
+â”‚   â””â”€â”€ event/
+â”‚       â”œâ”€â”€ splitscreen.js    six scissored viewports, adaptive quality
+â”‚       â”œâ”€â”€ split-hud.js      compact per-viewport HUD
+â”‚       â””â”€â”€ event-ui.js       lobby / settings / prerace / results / leaderboard
+â”œâ”€â”€ scripts/              stress, measurement and manual end-to-end harnesses
+â”œâ”€â”€ tests/                Playwright suite (event flow, reconnect, solo regression)
+â”œâ”€â”€ docs/measurements/    raw JSON captured by scripts/measure-host.cjs
+â”œâ”€â”€ dev/                  per-module test harnesses from the original build
+â””â”€â”€ docs/screenshots/     images used in this README
 ```
 
 Open `window.__game` in the browser console for debug hooks such as `startRace()`,
@@ -207,4 +207,4 @@ Turbo Kart Rally is an original, fan-made homage to the kart-racing genre. It is
 
 ## License
 
-[MIT](LICENSE) © 2026 BridgeMind
+[MIT](LICENSE) Â© 2026 BridgeMind

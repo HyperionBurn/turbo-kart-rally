@@ -1,7 +1,7 @@
 ﻿// Event-mode flow: six phones join, select, ready, race, finish, points, leaderboard, reconnect.
 const { test, expect } = require('@playwright/test');
 
-const HOST = 'http://127.0.0.1:8080';
+const HOST = 'http://127.0.0.1:8081';
 
 async function newHost(browser) {
   const page = await browser.newPage({ viewport: { width: 900, height: 506 } });

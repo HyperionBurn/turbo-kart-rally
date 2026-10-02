@@ -600,3 +600,6 @@ button { font: inherit; color: inherit; }
 .latency-overlay.on { display: block; }
 .latency-overlay .lr { display: flex; justify-content: space-between; gap: 14px; }
 .latency-overlay .good { color: #69f0ae; } .latency-overlay .warn { color: #ffd54f; } .latency-overlay .bad { color: #ff5252; }
+
+.ev-url.warn { color: #ff5252; font-weight: 900; }
+.ev-url.alt { font-size: 12px; opacity: .75; }

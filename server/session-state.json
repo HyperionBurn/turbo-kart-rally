@@ -1,0 +1,23 @@
+{
+ "flow": "lobby",
+ "settings": {
+  "laps": 3,
+  "difficulty": "normal",
+  "items": true,
+  "aiFill": 0,
+  "raceSpeed": "normal",
+  "cameraMode": "split",
+  "allowDupes": false
+ },
+ "pointsTable": [
+  10,
+  8,
+  6,
+  4,
+  2,
+  1
+ ],
+ "raceIndex": 0,
+ "scores": [],
+ "raceHistory": []
+}

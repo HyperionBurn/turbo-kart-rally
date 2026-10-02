@@ -7,7 +7,12 @@ const { WebSocketServer } = require('ws');
 const os = require('os');
 
 const ROOT = path.join(__dirname, '..');
-const PORT = process.env.PORT ? +process.env.PORT : 8080;
+const argPort = (() => {
+  const i = process.argv.indexOf('--port');
+  return i > -1 && process.argv[i + 1] ? +process.argv[i + 1] : null;
+})();
+const PORT = +(process.env.PORT || argPort || 8081);
+const PORT_ATTEMPTS = +(process.env.PORT_ATTEMPTS || 12); // 8081..8092 before giving up
 const MAX_SLOTS = 6;
 const sessionFile = path.join(ROOT, 'server', 'session-state.json');
 
@@ -82,6 +87,11 @@ function publicTeam(t) {
 }
 function broadcast(fn) { for (const c of allClients()) fn(c); }
 function allClients() { const out = []; if (hostWs) out.push(hostWs); for (const t of teams) if (t.ws) out.push(t.ws); for (const s of spectators) out.push(s); for (const d of diagSockets) out.push(d); return out; }
+/** Addresses phones should actually use — the LAN IP, never localhost. */
+function netInfo() {
+  const ips = lanIps();
+  return { port: activePort, ips, controllerUrl: ips.length ? `http://${ips[0]}:${activePort}/controller` : null };
+}
 function broadcastLobby() {
   const state = { type: 'lobby', state: { teams: teams.map(publicTeam), flow: session.flow } };
   for (const c of allClients()) send(c, state);
@@ -152,10 +162,10 @@ wss.on('connection', (ws, req) => {
 function handleJson(ws, m) {
   switch (m.type) {
     case 'diagHello': ws._role = 'diag'; diagSockets.add(ws);
-      send(ws, { type: 'session', state: session }); broadcastLobby(); break;
+      send(ws, { type: 'session', state: session, net: netInfo() }); broadcastLobby(); break;
     case 'hostHello': {
       ws._role = 'host'; hostWs = ws;
-      send(ws, { type: 'session', state: session });
+      send(ws, { type: 'session', state: session, net: netInfo() });
       broadcastLobby();
       break;
     }
@@ -248,7 +258,7 @@ function onClose(ws) {
 function hostAction(action) {
   if (action === 'startRace') { session.flow = 'racing'; persist(); pushSession(); broadcastLobby(); }
 }
-function pushSession() { send(hostWs, { type: 'session', state: session }); }
+function pushSession() { send(hostWs, { type: 'session', state: session, net: netInfo() }); }
 function applyResults(results) {
   // results: [{teamId, place}]
   const gained = {};
@@ -289,14 +299,29 @@ function log(msg) {
   try { require('fs').appendFileSync(LOG, `${new Date().toISOString()} ${msg}\n`); } catch {}
 }
 
-server.listen(PORT, '0.0.0.0', () => {
-  const ips = lanIps();
-  console.log('');
-  console.log('  Turbo Kart Rally — local event server');
-  console.log('  --------------------------------------');
-  console.log(`  HOST:        http://localhost:${PORT}`);
-  for (const ip of ips) console.log(`  LAN:         http://${ip}:${PORT}`);
-  console.log(`  Controllers: http://<LAN-IP>:${PORT}/controller`);
-  console.log(`  Diagnostics: http://localhost:${PORT}/diagnostics`);
-  console.log('');
-});
+let activePort = PORT;
+/** Bind, walking to the next free port if something else already owns this one. */
+function listen(port, attemptsLeft) {
+  server.once('error', (err) => {
+    if (err.code === 'EADDRINUSE' && attemptsLeft > 0) {
+      console.warn(`  ! port ${port} is already in use — trying ${port + 1}`);
+      listen(port + 1, attemptsLeft - 1);
+    } else {
+      console.error(`  x cannot bind port ${port}: ${err.message}`);
+      process.exit(1);
+    }
+  });
+  server.listen(port, '0.0.0.0', () => {
+    activePort = server.address().port;
+    const ips = lanIps();
+    console.log('');
+    console.log('  Turbo Kart Rally — local event server');
+    console.log('  --------------------------------------');
+    console.log(`  HOST:        http://localhost:${activePort}`);
+    for (const ip of ips) console.log(`  LAN:         http://${ip}:${activePort}`);
+    console.log(`  Controllers: http://<LAN-IP>:${activePort}/controller`);
+    console.log(`  Diagnostics: http://localhost:${activePort}/diagnostics`);
+    console.log('');
+  });
+}
+listen(PORT, PORT_ATTEMPTS);

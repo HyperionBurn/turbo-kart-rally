@@ -1,4 +1,4 @@
-// Host-side measurement harness: real game page + N synthetic controllers, samples
+﻿// Host-side measurement harness: real game page + N synthetic controllers, samples
 // frame time / physics / render / network and writes a JSON report.
 //   node scripts/measure-host.cjs --clients 6 --duration 30 --tag six-normal
 const { chromium } = require('playwright');
@@ -15,7 +15,7 @@ for (let i = 2; i < process.argv.length; i++) {
 const CLIENTS = +(args.clients || 6);
 const DURATION = +(args.duration || 20);
 const TAG = args.tag && args.tag !== true ? args.tag : 'run';
-const HOST = args.host || 'http://127.0.0.1:8080';
+const HOST = args.host || 'http://127.0.0.1:8081';
 const WIDTH = +(args.width || 1280), HEIGHT = +(args.height || 720);
 const OUT = path.join(__dirname, '..', 'docs', 'measurements');
 fs.mkdirSync(OUT, { recursive: true });

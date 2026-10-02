@@ -1,4 +1,4 @@
-// Playwright test suite for the event-mode flow.
+﻿// Playwright test suite for the event-mode flow.
 // Run with: npm test
 const { defineConfig } = require('@playwright/test');
 
@@ -10,13 +10,13 @@ module.exports = defineConfig({
   workers: 1,
   reporter: [['list']],
   use: {
-    baseURL: 'http://127.0.0.1:8080',
+    baseURL: 'http://127.0.0.1:8081',
     headless: true,
     viewport: { width: 1280, height: 720 },
   },
   webServer: {
     command: 'node server/server.js',
-    url: 'http://127.0.0.1:8080/diagnostics',
+    url: 'http://127.0.0.1:8081/diagnostics',
     reuseExistingServer: true,
     timeout: 30000,
   },

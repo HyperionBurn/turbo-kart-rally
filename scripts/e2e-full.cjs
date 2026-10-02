@@ -1,7 +1,7 @@
-// Full event flow: 6 controllers -> lobby -> select -> settings -> race -> results -> points -> leaderboard -> next race.
+﻿// Full event flow: 6 controllers -> lobby -> select -> settings -> race -> results -> points -> leaderboard -> next race.
 const { chromium } = require('playwright');
 
-const HOST = 'http://127.0.0.1:8080';
+const HOST = 'http://127.0.0.1:8081';
 (async () => {
   const b = await chromium.launch();
   const errs = [];

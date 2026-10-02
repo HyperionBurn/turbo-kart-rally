@@ -143,7 +143,8 @@ export class HostNetworkClient {
         bus.emit('net:relayLog', m.rows);
         break;
       case 'session':
-        bus.emit('net:session', { state: m.state });
+        this.net = m.net || this.net;
+        bus.emit('net:session', { state: m.state, net: m.net });
         break;
       case 'settings':
         bus.emit('net:settings', m.state);

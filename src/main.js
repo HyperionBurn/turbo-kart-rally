@@ -273,6 +273,7 @@ let split = null;
 let splitHud = null;
 let eventUI = null;
 let eventSession = null;           // last server session state
+let eventNet = null;               // LAN addresses reported by the server (for the QR code)
 let eventLobby = null;             // last lobby state
 const eventRadar = { physicsMs: 0, renderMs: 0, frames: 0, fpsT: 0, longFrames: 0, lastFps: 0, frameMsEma: 0, frameMsMax: 0 };
 const eventProbe = { on: false, rows: [] };
@@ -365,15 +366,23 @@ function setEventFlow(flow) {
 }
 
 function setSessionSettings() {
-  if (eventSession) { eventSession.controllerUrl = location.origin + '/controller'; if (eventUI) eventUI.setSession(eventSession); }
+  if (eventSession) {
+    eventSession.controllerUrl = eventNet && eventNet.controllerUrl ? eventNet.controllerUrl : `${location.origin}/controller`;
+    eventSession.lanWarning = !(eventNet && eventNet.controllerUrl);
+    if (eventUI) eventUI.setSession(eventSession);
+  }
 }
 
-bus.on('net:session', ({ state }) => {
+bus.on('net:session', ({ state, net }) => {
   const prev = eventSession;
   eventSession = state;
   if (prev && prev.lastResults && !state.lastResults) state.lastResults = prev.lastResults;
   if (prev && prev.lastGained && !state.lastGained) state.lastGained = prev.lastGained;
-  state.controllerUrl = location.origin + '/controller';
+  // phones must get the LAN address, never "localhost" (that would be the phone itself)
+  eventNet = net || eventNet;
+  state.controllerUrl = eventNet && eventNet.controllerUrl ? eventNet.controllerUrl : `${location.origin}/controller`;
+  state.lanWarning = !(eventNet && eventNet.controllerUrl);
+  state.altUrls = (eventNet && eventNet.ips || []).slice(1).map((ip) => `http://${ip}:${eventNet.port}/controller`);
   if (eventUI) eventUI.setSession(state);
 });
 const prevSeen = new Map(); // teamId -> connection signature, for join/leave cues
