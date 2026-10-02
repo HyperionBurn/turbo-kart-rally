@@ -17,7 +17,7 @@ const LAYOUTS = {
 // always sized by CSS to the window, and only the drawing buffer shrinks, so the browser
 // scales the image back up. That keeps viewport maths exact and avoids the classic
 // "canvas CSS size vs drawing buffer size" mismatch that produces partial frames.
-const SCALE_TIERS = [1, 0.85, 0.75, 0.65, 0.55, 0.45];
+export const SCALE_TIERS = [1, 0.85, 0.75, 0.65, 0.55, 0.45];
 const _size = new THREE.Vector2();
 
 export class SplitScreen {
@@ -52,35 +52,55 @@ export class SplitScreen {
     }
   }
 
-  /** Render every viewport. scene: shared THREE.Scene. */
+  /**
+   * Render every viewport. scene: shared THREE.Scene.
+   *
+   * Layout is defined in CSS pixels relative to the *canvas element's* box and then mapped
+   * into drawing-buffer pixels. Deriving the viewports from the buffer alone silently skews
+   * the grid whenever the buffer aspect and the CSS box disagree (fullscreen browser chrome,
+   * device pixel ratio, render-scale tiers) — and then the 3D view no longer lines up with
+   * the DOM HUD panels drawn on top of it.
+   */
   render(scene, broadcast) {
     const r = this.renderer;
-    // always work in drawing-buffer pixels: the adaptive tier may have changed the ratio
+    const el = r.domElement;
+    const rect = el.getBoundingClientRect();
+    const cssW = Math.max(1, rect.width || el.clientWidth || window.innerWidth);
+    const cssH = Math.max(1, rect.height || el.clientHeight || window.innerHeight);
     r.getDrawingBufferSize(_size);
-    const w = Math.max(1, Math.floor(_size.x)), h = Math.max(1, Math.floor(_size.y));
+    const bw = Math.max(1, Math.floor(_size.x)), bh = Math.max(1, Math.floor(_size.y));
+    const sx = bw / cssW, sy = bh / cssH;         // CSS px -> buffer px
+    this.lastMapping = { cssW, cssH, bw, bh, sx, sy };
+
     r.setScissorTest(true);
     r.setClearColor(0x0b0e1a, 1);
     if (broadcast) {
       const c = this.cams[this.broadcastIndex];
-      r.setViewport(0, 0, w, h); r.setScissor(0, 0, w, h);
+      r.setViewport(0, 0, bw, bh); r.setScissor(0, 0, bw, bh);
       if (c) {
-        c.camera.aspect = w / h; c.camera.updateProjectionMatrix();
+        c.camera.aspect = bw / bh; c.camera.updateProjectionMatrix();
         r.clear(); r.render(scene, c.camera);
       } else r.clear();
       r.setScissorTest(false);
+      this.lastViewports = [{ x: 0, y: 0, w: bw, h: bh }];
       return;
     }
     const layout = this.layout;
+    this.lastViewports = [];
     for (let i = 0; i < this.cams.length; i++) {
-      const [nx, ny, nw, nh] = layout[i]; // ny from top
-      const vx = Math.floor(nx * w), vw = Math.ceil(nw * w);
-      const vy = Math.floor((1 - ny - nh) * h), vh = Math.ceil(nh * h);
+      const [nx, ny, nw, nh] = layout[i]; // ny measured from the top
+      const vx = Math.round(nx * cssW * sx);
+      const vw = Math.max(1, Math.round(nw * cssW * sx));
+      const vyTop = Math.round(ny * cssH * sy);
+      const vh = Math.max(1, Math.round(nh * cssH * sy));
+      const vy = Math.round(bh - (vyTop + vh)); // GL origin is bottom-left
       const c = this.cams[i];
       c.camera.aspect = vw / vh; c.camera.updateProjectionMatrix();
       r.setViewport(vx, vy, vw, vh);
       r.setScissor(vx, vy, vw, vh);
       if (i === 0) r.clear();
       r.render(scene, c.camera);
+      this.lastViewports.push({ x: vx, y: vyTop, w: vw, h: vh, css: { x: nx * cssW, y: ny * cssH, w: nw * cssW, h: nh * cssH } });
     }
     r.setScissorTest(false);
   }
@@ -102,8 +122,11 @@ export class SplitScreen {
   }
   _applyTier() {
     const scale = SCALE_TIERS[this.tierIndex];
-    const w = Math.max(320, Math.round(window.innerWidth * scale));
-    const h = Math.max(180, Math.round(window.innerHeight * scale));
+    // size the buffer from the canvas' own CSS box, not from window.innerWidth/Height:
+    // those can disagree (fullscreen chrome, scrollbars), which would skew the grid
+    const el = this.renderer.domElement;
+    const w = Math.max(320, Math.round((el.clientWidth || window.innerWidth) * scale));
+    const h = Math.max(180, Math.round((el.clientHeight || window.innerHeight) * scale));
     this.renderer.setSize(w, h, false);   // updateStyle=false: CSS keeps the canvas full-window
     bus.emit('split:quality', { tier: this.tierIndex, scale });
   }

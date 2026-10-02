@@ -1,5 +1,5 @@
 {
- "flow": "lobby",
+ "flow": "prerace",
  "settings": {
   "laps": 3,
   "difficulty": "normal",

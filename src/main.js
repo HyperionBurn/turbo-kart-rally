@@ -12,7 +12,7 @@ import { Menu } from './menu.js';
 import { AudioEngine } from './audio.js';
 import { HostNetworkClient } from './multiplayer/network-client.js';
 import { EventUI } from './event/event-ui.js';
-import { SplitScreen } from './event/splitscreen.js';
+import { SplitScreen, SCALE_TIERS } from './event/splitscreen.js';
 import { SplitHUD } from './event/split-hud.js';
 
 // ---------------------------------------------------------------------------------------------
@@ -1079,6 +1079,10 @@ window.__game = {
   netStats: () => netClient && ({ stats: netClient.aggregateStats(), perTeam: Object.fromEntries([...netClient.teamStats].map(([id, s]) => [id, s.snapshot()])), clockOffset: netClient.clock.offset, connected: netClient.connected, lobbyPing: eventLobby && eventLobby.teams.map((t) => ({ id: t.id, ping: t.ping, p95: t.p95, jitter: t.jitter })) }),
   debugLobby: () => eventLobby && eventLobby.teams.map((t) => ({ id: t.id, ai: t.ai, conn: t.connected, sessionId: t.sessionId })),
   sessionSettings: () => (eventSession && eventSession.settings) || null,
+  /** Debug/test: pin the adaptive render-scale tier. */
+  setSplitTier(i) { if (split) { split.tierIndex = Math.max(0, Math.min(SCALE_TIERS.length - 1, i | 0)); split._applyTier(); } return split && split.tierIndex; },
+  /** Diagnostics: GL viewport rects (buffer px) and their CSS equivalents. */
+  viewportDebug: () => (split && split.lastViewports ? { mapping: split.lastMapping, viewports: split.lastViewports } : null),
   manualRender: () => {
     const w = world; if (!w || !split || !split.cams.length) return 'no-world';
     const r = renderer, size = new THREE.Vector2();
