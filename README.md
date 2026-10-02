@@ -194,6 +194,13 @@ and `send(msg)` for the local server.
 | ![Character select](docs/screenshots/character-select.jpg) | ![Racing](docs/screenshots/race.jpg) |
 | ![Items and grandstands](docs/screenshots/items.jpg) | ![Results](docs/screenshots/results.jpg) |
 
+Event mode:
+
+| | |
+| --- | --- |
+| ![Lobby](docs/screenshots-event/02-lobby-six.png) | ![Split screen](docs/screenshots-event/06-split-race.png) |
+| ![Results](docs/screenshots-event/08-results.png) | ![Leaderboard](docs/screenshots-event/09-leaderboard.png) |
+
 ## Disclaimer
 
 Turbo Kart Rally is an original, fan-made homage to the kart-racing genre. It is not affiliated with, endorsed by, or associated with Nintendo. All characters, circuits, names, art, music and code in this repository are original.

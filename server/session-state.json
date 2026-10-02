@@ -6,7 +6,7 @@
   "items": true,
   "aiFill": 0,
   "raceSpeed": "normal",
-  "cameraMode": "split",
+  "cameraMode": "broadcast",
   "allowDupes": false
  },
  "pointsTable": [
@@ -17,7 +17,100 @@
   2,
   1
  ],
- "raceIndex": 0,
- "scores": [],
- "raceHistory": []
+ "raceIndex": 1,
+ "scores": [
+  {
+   "teamId": 6,
+   "name": "TANGERINE",
+   "characterId": 5,
+   "total": 10,
+   "wins": 1,
+   "podiums": 1,
+   "previous": 0
+  },
+  {
+   "teamId": 1,
+   "name": "CRIMSON",
+   "characterId": 0,
+   "total": 8,
+   "wins": 0,
+   "podiums": 1,
+   "previous": 0
+  },
+  {
+   "teamId": 5,
+   "name": "ORCHID",
+   "characterId": 4,
+   "total": 6,
+   "wins": 0,
+   "podiums": 1,
+   "previous": 0
+  },
+  {
+   "teamId": 2,
+   "name": "AZURE",
+   "characterId": 1,
+   "total": 4,
+   "wins": 0,
+   "podiums": 0,
+   "previous": 0
+  },
+  {
+   "teamId": 3,
+   "name": "JADE",
+   "characterId": 2,
+   "total": 2,
+   "wins": 0,
+   "podiums": 0,
+   "previous": 0
+  },
+  {
+   "teamId": 4,
+   "name": "GOLD",
+   "characterId": 3,
+   "total": 1,
+   "wins": 0,
+   "podiums": 0,
+   "previous": 0
+  }
+ ],
+ "raceHistory": [
+  {
+   "raceIndex": 0,
+   "results": [
+    {
+     "teamId": 6,
+     "place": 1
+    },
+    {
+     "teamId": 1,
+     "place": 2
+    },
+    {
+     "teamId": 5,
+     "place": 3
+    },
+    {
+     "teamId": 2,
+     "place": 4
+    },
+    {
+     "teamId": 3,
+     "place": 5
+    },
+    {
+     "teamId": 4,
+     "place": 6
+    }
+   ],
+   "gained": {
+    "1": 8,
+    "2": 4,
+    "3": 2,
+    "4": 1,
+    "5": 6,
+    "6": 10
+   }
+  }
+ ]
 }
