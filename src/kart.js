@@ -199,7 +199,9 @@ export class Kart {
   }
 
   _onGo() {
-    if (!this.isPlayer) return;
+    // any kart a human is driving may rocket-start (solo player or an event-mode phone);
+    // AI karts never register a countdown hold, so they start normally either way.
+    if (!this.isPlayer && this._ai) return;
     const c = this._countdown;
     const thr = this._rawThrottle();
     if (thr < 0.5 || c.holdStart < 0) { c.holdStart = -1; return; }

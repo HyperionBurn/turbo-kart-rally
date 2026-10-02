@@ -1,0 +1,28 @@
+﻿### Test A: 6 normal controllers, 30 s
+
+=== stress summary ===
+clients:            6 (0 spectating: lobby full)
+duration:           30.4 s
+input rate:         256.6 packets/s total, 42.8 per client
+RTT p50 / p95 / p99:0 / 1 / 1 ms
+jitter (mean |╬ö|):  0.17 ms
+ping samples:       696
+mode:               normal
+client flow:        racing,racing,racing,racing,racing,racing
+client teams:       1,2,3,4,5,6
+server flow:        racing
+HTTP /diagnostics after load: 200 in 3 ms
+### Test B: 6 frantic controllers, 20 s
+
+=== stress summary ===
+clients:            6 (0 spectating: lobby full)
+duration:           20.4 s
+input rate:         255.9 packets/s total, 42.7 per client
+RTT p50 / p95 / p99:0 / 1 / 1 ms
+jitter (mean |╬ö|):  0.16 ms
+ping samples:       468
+mode:               frantic
+client flow:        racing,racing,racing,racing,racing,racing
+client teams:       1,2,3,4,5,6
+server flow:        racing
+HTTP /diagnostics after load: 200 in 3 ms

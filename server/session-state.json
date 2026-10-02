@@ -1,5 +1,5 @@
 {
- "flow": "countdown",
+ "flow": "lobby",
  "settings": {
   "laps": 3,
   "difficulty": "normal",
