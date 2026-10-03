@@ -121,6 +121,11 @@ export class RaceManager {
     this._sortPlaces();
     if (this.player && !this.player.finished && this.phase === 'racing') this._updateWrongWay(dt);
     else if (this.wrongWay) this._setWrongWay(false);
+    // event mode has no single player kart: track wrong-way per kart (silent flags only,
+    // consumed by split-HUD + standings; no bus spam)
+    if (!this.player && this.phase === 'racing') {
+      for (const k of this.karts) this._updateKartWrongWay(k, dt);
+    }
 
     if (this.endTimer >= 0) {
       this.endTimer -= dt;
@@ -240,6 +245,28 @@ export class RaceManager {
     if (this.wrongWay === v) return;
     this.wrongWay = v;
     this._emit('race:wrongWay', { active: v });
+  }
+
+  // Per-kart wrong-way flag for event mode (k._wrongWay). Same direction logic as the
+  // solo check, with per-kart debounce timers; finished karts are never flagged.
+  _updateKartWrongWay(k, dt) {
+    if (!this.track || typeof this.track.getTangentAt !== 'function') return;
+    if (k.finished) { k._wrongWay = false; k._wwWrong = 0; k._wwRight = 0; return; }
+    let tan;
+    try { tan = this.track.getTangentAt(this._tOf(k)); } catch (e) { return; }
+    if (!tan) return;
+    _fwd.set(Math.sin(k.heading || 0), 0, Math.cos(k.heading || 0));
+    const tl = Math.hypot(tan.x, tan.z) || 1;
+    const dot = (_fwd.x * tan.x + _fwd.z * tan.z) / tl;
+    const vx = k.velocity ? k.velocity.x : 0, vz = k.velocity ? k.velocity.z : 0;
+    const vdot = (vx * tan.x + vz * tan.z) / tl;
+    const moving = Math.abs(k.speed || 0) > 3;
+    const wrong = moving && dot < -0.25 && vdot < -2;
+    k._wwWrong = (k._wwWrong || 0); k._wwRight = (k._wwRight || 0);
+    if (wrong) { k._wwWrong += dt; k._wwRight = 0; }
+    else { k._wwRight += dt; k._wwWrong = 0; }
+    if (!k._wrongWay && k._wwWrong > 1) k._wrongWay = true;
+    else if (k._wrongWay && k._wwRight > 0.4) k._wrongWay = false;
   }
 
   _end() {

@@ -139,6 +139,7 @@ export class SplitHUD {
       let warnTxt, warnCls;
       if (lobbyTeam && !lobbyTeam.connected && !lobbyTeam.ai) { warnTxt = '⚠ RECONNECTING'; warnCls = true; }
       else if (lobbyTeam && lobbyTeam.ai && !lobbyTeam.connected) { warnTxt = '🤖 AI'; warnCls = false; }
+      else if (k._wrongWay && !k.finished) { warnTxt = '↩ WRONG WAY'; warnCls = true; }
       else { warnTxt = ''; warnCls = false; }
       if (c.warnTxt !== warnTxt) { r.warn.textContent = warnTxt; c.warnTxt = warnTxt; }
       if (c.warnCls !== warnCls) { p.classList.toggle('warn', warnCls); c.warnCls = warnCls; }

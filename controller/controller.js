@@ -133,9 +133,11 @@ function onMessage(m) {
       if (prevFlow !== state.flow) onFlowChange(prevFlow, state.flow);
       if (Array.isArray(st.pointsTable)) state.pointsTable = st.pointsTable;
       if (typeof st.raceIndex === 'number') state.raceIndex = st.raceIndex;
+      else state.raceIndex = undefined;
       if (st.settings && typeof st.settings.laps === 'number') state.totalLaps = st.settings.laps;
       if (typeof st.laps === 'number' && st.laps > 0) state.totalLaps = st.laps;
       if (typeof st.totalRaces === 'number') state.totalRaces = st.totalRaces;
+      else state.totalRaces = undefined;
       const teams = Array.isArray(st.teams) ? st.teams : [];
       const me = teams.find((t) => t && t.id === state.teamId);
       const readyCount = teams.filter((t) => t && t.connected && t.ready).length;
@@ -159,6 +161,8 @@ function onMessage(m) {
       if (state.flow === 'prerace' || state.flow === 'racing' || state.flow === 'countdown') showView('race');
       else if (state.flow === 'results' || state.flow === 'leaderboard') { renderEnd(); showView('end'); }
       else showView('lobby');
+      updateRaceLines();
+      updateRocketHint();
       break;
     }
     case 'session': {
@@ -166,10 +170,13 @@ function onMessage(m) {
       if (m.state) {
         if (Array.isArray(m.state.pointsTable)) state.pointsTable = m.state.pointsTable;
         if (typeof m.state.raceIndex === 'number') state.raceIndex = m.state.raceIndex;
+        else if ('raceIndex' in m.state) state.raceIndex = undefined;
         if (m.state.settings && typeof m.state.settings.laps === 'number') state.totalLaps = m.state.settings.laps;
         if (typeof m.state.laps === 'number' && m.state.laps > 0) state.totalLaps = m.state.laps;
         if (typeof m.state.totalRaces === 'number') state.totalRaces = m.state.totalRaces;
+        else if ('totalRaces' in m.state) state.totalRaces = undefined;
         if (m.state.settings && typeof m.state.settings.raceSpeed !== 'undefined') state.raceSpeed = m.state.settings.raceSpeed;
+        updateRaceLines();
       }
       break;
     }
@@ -202,6 +209,8 @@ function onMessage(m) {
           state.itemJustUsed = null;
         }
         setItemHeld(item);
+        // Wrong-way: evaluate ONLY this fresh standings row (never stale state).
+        updateWrongWay(me && me.wrong === true);
         // FINAL LAP: only when the host told us laps (state.totalLaps>1) and this
         // row is on the last lap. Once per race; never guess when laps unknown.
         const lapsKnown = (+state.totalLaps || 0) > 1;
@@ -216,6 +225,7 @@ function onMessage(m) {
         else if (dir === 'up' && place) { flashEvent(`P${place} ▲`, 'up'); buzz([0, 40, 40, 80]); beep(880, 0.09); setTimeout(() => beep(1174, 0.12), 90); }
         else if (dir === 'down' && place) { flashEvent(`P${place} ▼`, 'down'); buzz(120); beep(220, 0.18, 'sawtooth', 0.05); }
       } else $('race-pos').textContent = '';
+      if (!me) updateWrongWay(false);
       break;
     }
     case 'pong': {
@@ -276,6 +286,7 @@ function onFlowChange(from, to) {
     state.lastPlace = 0; state.lastLap = 1;
     state.itemJustUsed = null;
     setItemHeld(null);
+    updateWrongWay(false);
     maybeBattWarn();
   }
   const ov = $('countdown-overlay');
@@ -296,6 +307,7 @@ function onFlowChange(from, to) {
     if (to === 'lobby') releaseWake();
   }
   $('race-team').textContent = state.name || (state.teamId ? `TEAM ${state.teamId}` : '');
+  updateRocketHint();
 }
 function flashCountdown(text, go) {
   const ov = $('countdown-overlay');
@@ -317,6 +329,7 @@ function renderEnd() {
     if (p === 1) { champEl.textContent = '🏆 CHAMPION OF THE RACE'; champEl.hidden = false; }
     else { champEl.textContent = ''; champEl.hidden = true; }
   }
+  updateRaceLines();
 }
 
 /** Pure race-feel helpers (kept side-effect free so they stay unit-testable). */
@@ -362,15 +375,55 @@ function maybeBattWarn() {
   }
 }
 
+/** Rocket-start hint: visible only during countdown/prerace; GAS pulses with it. */
+function updateRocketHint() {
+  const show = state.flow === 'countdown' || state.flow === 'prerace';
+  const h = $('rocket-hint');
+  if (h) h.hidden = !show;
+  const gas = $('ctl-gas');
+  if (gas) gas.classList.toggle('rocket', !!show);
+}
+
+/** Wrong-way banner: driven ONLY by the fresh standings row (wrong===true). */
+let wrongWayOn = false;
+function updateWrongWay(on) {
+  const show = on === true;
+  if (show && !wrongWayOn) {
+    buzz([0, 120, 60, 120, 60, 200]);
+    beep(220, 0.2, 'sawtooth', 0.06);
+  }
+  wrongWayOn = show;
+  const b = $('wrongway-banner');
+  if (b) b.hidden = !show;
+}
+
+/** Race context lines: "RACE x OF y" in lobby + results; hidden if either is unknown. */
+function updateRaceLines() {
+  const ri = state.raceIndex, tr = state.totalRaces;
+  const ok = (typeof ri === 'number' && Number.isFinite(ri) && ri >= 0)
+    && (typeof tr === 'number' && Number.isFinite(tr) && tr > 0);
+  const txt = ok ? `RACE ${ri + 1} OF ${tr}` : '';
+  const l1 = $('lobby-race-line');
+  if (l1) { l1.textContent = txt; l1.hidden = !ok; }
+  const l2 = $('end-race-line');
+  if (l2) { l2.textContent = txt; l2.hidden = !ok; }
+}
+
 /** ITEM button mirrors what you're holding (the host tells us each 500 ms). */
 function setItemHeld(item) {
-  if (item === state.itemHeld) return;
+  if (item === state.itemHeld) { syncItemHint(); return; }
   const had = state.itemHeld;
   state.itemHeld = item;
   const el = $('ctl-item');
   el.classList.toggle('has-item', !!item);
   el.textContent = item ? `ITEM: ${itemLabel(item)}` : 'ITEM';
+  syncItemHint();
   if (item && !had) { buzz([0, 40, 40, 60]); beep(880, 0.09); setTimeout(() => beep(1174, 0.12), 90); }
+}
+/** Tiny "TAP TO USE ▲" caption under ITEM, visible only while an item is held. */
+function syncItemHint() {
+  const h = $('item-use-hint');
+  if (h) h.hidden = !state.itemHeld;
 }
 function itemLabel(id) {
   return ({ mushroom: '🍄', triple_mushroom: '🍄×3', banana: '🍌', green_shell: '🟢', red_shell: '🔴', star: '⭐', lightning: '⚡', blue_shell: '🔵' })[id] || '●';
@@ -631,4 +684,4 @@ function applyHowto() {
 
 // Light-verification hook: lets a single test page dispatch synthetic inbound
 // messages and call the pure helpers without touching the network.
-window.__tkr = { state, onMessage, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, setItemHeld, maybeBattWarn, buzz, beep, hapticsOn, soundOn, applyHand, applyHowto, applyPrefToggles, onFlowChange };
+window.__tkr = { state, onMessage, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, setItemHeld, maybeBattWarn, buzz, beep, hapticsOn, soundOn, applyHand, applyHowto, applyPrefToggles, onFlowChange, updateRocketHint, updateWrongWay, updateRaceLines, syncItemHint };

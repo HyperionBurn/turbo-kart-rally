@@ -289,7 +289,7 @@ const netOffsets = new Map();      // teamId -> client clock offset vs server (r
 setInterval(() => {
   const w = world;
   if (mode !== 'event' || !w || w.mode !== 'event' || !netClient || state !== 'racing') return;
-  const rows = w.karts.filter((k) => k.teamId > 0).map((k) => ({ teamId: k.teamId, place: k.place, lap: Math.min(k.lap || 1, w.race.laps), item: k.item || null })).sort((a, b) => a.place - b.place);
+  const rows = w.karts.filter((k) => k.teamId > 0).map((k) => ({ teamId: k.teamId, place: k.place, lap: Math.min(k.lap || 1, w.race.laps), item: k.item || null, wrong: !!k._wrongWay })).sort((a, b) => a.place - b.place);
   netClient.send({ type: 'hostStandings', rows });
 }, 500);
 
@@ -620,12 +620,25 @@ bus.on('race:end', (d) => {
   finishEventRace(results);
 });
 
-function flashEventBanner(text) {
+function flashEventBanner(text, small) {
   let el = document.querySelector('.event-banner');
   if (!el) { el = document.createElement('div'); el.className = 'event-banner'; uiRoot.appendChild(el); }
   el.textContent = text;
+  // inline sizing (not a stylesheet class) so leader flashes read as subordinate to GO/FINAL LAP
+  el.style.fontSize = small ? '54px' : '';
+  el.style.letterSpacing = small ? '4px' : '';
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
 }
+bus.on('race:leader', ({ kart, teamId } = {}) => {
+  if (mode !== 'event' || !world || world.mode !== 'event' || eventPhase !== 'racing') return;
+  const id = (kart && kart.teamId) || teamId || 0;
+  if (!id) return;
+  flashEventBanner(`NEW LEADER: ${teamName(id).toUpperCase()}!`, true);
+});
+bus.on('race:finalLap', () => {
+  if (mode !== 'event' || !world || world.mode !== 'event' || eventPhase !== 'racing') return;
+  flashEventBanner('FINAL LAP!');
+});
 
 /** F1-style start lights for the event countdown (and a rocket start if you hold GAS). */
 const startLights = { el: null, set(n) {

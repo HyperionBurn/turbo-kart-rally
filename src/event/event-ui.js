@@ -11,6 +11,11 @@ export class EventUI {
     this.el = document.createElement('div');
     this.el.className = 'event-ui';
     root.appendChild(this.el);
+    this.ticker = document.createElement('div');
+    this.ticker.className = 'ev-ticker';
+    this.ticker.setAttribute('aria-hidden', 'true');
+    this.ticker.hidden = true;
+    root.appendChild(this.ticker);
     this.screen = null;
     this.lobby = null;   // last lobby state
     this.session = null; // last session state
@@ -23,8 +28,9 @@ export class EventUI {
     this.screen = screen;
     this.el.dataset.screen = screen || '';
     this.render();
+    this._updateTicker();
   }
-  hide() { this.screen = null; this.el.dataset.screen = ''; this.el.innerHTML = ''; }
+  hide() { this.screen = null; this.el.dataset.screen = ''; this.el.innerHTML = ''; this._updateTicker(); }
 
   setLobby(state) {
     const sig = JSON.stringify(state.teams && state.teams.map((t) => [t.id, t.name, t.connected, t.ready, t.ai, t.characterIdx]));
@@ -41,11 +47,13 @@ export class EventUI {
         }
       });
       this.lobby = state;
+      this._updateTicker();
       return;
     }
     this._lobbySig = sig;
     this.lobby = state;
     if (this.screen === 'lobby') this.render();
+    this._updateTicker();
   }
   setSession(state) {
     const sig = JSON.stringify([state.flow, state.raceIndex, state.settings, (state.scores || []).map((s) => [s.teamId, s.total, s.wins]), state.lastResults && state.lastResults.length, state.controllerUrl]);
@@ -55,9 +63,11 @@ export class EventUI {
     this.session = state;
     if (!changed) {
       if (keepLocal && keepLocal.lastResults && !state.lastResults) state.lastResults = keepLocal.lastResults;
+      this._updateTicker();
       return;
     }
     if (this.screen) this.render();
+    this._updateTicker();
   }
 
   render() {
@@ -68,6 +78,28 @@ export class EventUI {
       case 'results': return this._renderResults();
       case 'leaderboard': return this._renderLeaderboard();
     }
+  }
+
+  _updateTicker() {
+    if (!this.ticker) return;
+    const s = this.session;
+    const flow = s && s.flow;
+    if (!s || (flow !== 'prerace' && flow !== 'countdown' && flow !== 'racing')) {
+      this.ticker.hidden = true;
+      this.ticker.textContent = '';
+      return;
+    }
+    const total = (s.settings && s.settings.raceCount) || s.raceCount || 3;
+    const idx = (s.raceIndex || 0) + 1;
+    const laps = (s.settings && s.settings.laps) ?? s.laps ?? 3;
+    const scores = Array.isArray(s.scores) ? s.scores.slice().sort((a, b) => (b.total || 0) - (a.total || 0)) : [];
+    const leader = scores.length ? scores[0] : null;
+    let text = `RACE ${idx} OF ${total} · ${laps} LAPS`;
+    if (leader && leader.name != null && isFinite(+leader.total)) {
+      text += ` · 🏆 LEADER: ${leader.name} (${leader.total} PTS)`;
+    }
+    this.ticker.textContent = text;
+    this.ticker.hidden = false;
   }
 
   _renderLobby() {
@@ -159,17 +191,34 @@ export class EventUI {
     const gained = (s && s.lastGained) || {};
     const results = (s && s.lastResults) || [];
     const medal = (p) => p === 1 ? '🥇 ' : p === 2 ? '🥈 ' : p === 3 ? '🥉 ' : '';
+    const winner = results.find((r) => r.place === 1) || results[0] || null;
+    const winnerT = winner ? parseRaceTime(winner.time) : null;
     this.el.innerHTML = `
       <div class="ev-results">
         <h2>RACE RESULTS</h2>
-        ${results.map((r) => `
+        ${results.map((r) => {
+          let timeText = '';
+          let gapCls = '';
+          if (r.place === 1) {
+            timeText = r.time || '';
+          } else {
+            const t = parseRaceTime(r.time);
+            if (t != null && winnerT != null && isFinite(t - winnerT) && (t - winnerT) >= 0) {
+              timeText = `+${(t - winnerT).toFixed(2)}s`;
+              gapCls = ' res-gap';
+            } else {
+              timeText = '';
+            }
+          }
+          return `
           <div class="res-row" style="--tc:${r.color || '#888'}${r.place === 1 ? ';border-left:4px solid #ffd835;padding-left:8px' : ''}">
             <span class="res-place">${medal(r.place)}${ord(r.place)}</span>
             <span class="res-name">${r.name}</span>
             <span class="res-char">${r.characterName || ''}</span>
-            <span class="res-time">${r.time || ''}</span>
+            <span class="res-time${gapCls}">${timeText}</span>
             <span class="res-pts">+${gained[r.teamId] ?? 0}</span>
-          </div>`).join('')}
+          </div>`;
+        }).join('')}
         <button id="ev-next" class="btn primary big">LEADERBOARD</button>
       </div>`;
     this.el.querySelector('#ev-next').onclick = () => this.h.showLeaderboard();
@@ -198,6 +247,11 @@ export class EventUI {
       const g = (r.total || 0) - (r.previous || 0);
       if (g > climbBest) { climbBest = g; climbIdx = i; }
     });
+    // most wins: max wins; ties → first in display order
+    let mostWins = scores.length ? scores[0] : null;
+    for (const r of scores) {
+      if ((r.wins || 0) > (mostWins.wins || 0)) mostWins = r;
+    }
     this.el.innerHTML = `
       <div class="ev-board ${done ? 'final' : ''}">
         ${champ ? `<div class="champ-banner"><div class="champ-kicker">EVENT CHAMPION</div>
@@ -210,6 +264,7 @@ export class EventUI {
             ${scores.map((r, i) => `<tr><td>${i + 1}</td><td>${r.name}${i === climbIdx ? '<span style="color:#ffd835;font-size:11px"> ▲ BIGGEST CLIMB</span>' : ''}</td><td>${CHARACTERS[r.characterId] ? CHARACTERS[r.characterId].name : ''}</td><td>${r.previous}</td><td>+${(r.total - r.previous)}</td><td class="tot" data-total="${r.total}">0</td><td>${r.wins}</td></tr>`).join('')}
           </tbody>
         </table>
+        ${mostWins ? `<div class="ev-most-wins">MOST WINS: ${mostWins.name} (${mostWins.wins || 0}) 🏁</div>` : ''}
         <button id="ev-again" class="btn primary big">NEXT RACE</button>
         <button id="ev-reset" class="btn ghost">RESET TOURNAMENT</button>
         <button id="ev-quit" class="btn ghost">END EVENT</button>
@@ -250,6 +305,22 @@ function slotHtml(t) {
 }
 
 function ord(n) { return ['1st', '2nd', '3rd', '4th', '5th', '6th'][n - 1] || `${n}th`; }
+function parseRaceTime(t) {
+  if (t == null) return null;
+  if (typeof t === 'number') return isFinite(t) ? t : null;
+  const s = String(t).trim();
+  if (!s) return null;
+  if (s.includes(':')) {
+    const parts = s.split(':');
+    if (parts.length !== 2) return null;
+    const m = parseFloat(parts[0]);
+    const sec = parseFloat(parts[1]);
+    if (!isFinite(m) || !isFinite(sec)) return null;
+    return m * 60 + sec;
+  }
+  const v = parseFloat(s);
+  return isFinite(v) ? v : null;
+}
 function pingClass(ping) {
   const p = +ping || 0;
   return p <= 30 ? 'ping-good' : (p <= 80 ? 'ping-ok' : 'ping-bad');

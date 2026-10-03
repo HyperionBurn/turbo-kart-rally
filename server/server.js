@@ -74,8 +74,21 @@ let hostWs = null;
 const faults = new Map();
 function faultFor(buf) {
   const team = peekTeam(buf);
-  return faults.get(team) || faults.get('*') || null;
+  for (const key of [team, '*']) {
+    const f = faults.get(key);
+    if (!f) continue;
+    if (f.expiresAt && Date.now() > f.expiresAt) { faults.delete(key); continue; }
+    return f;
+  }
+  return null;
 }
+// Sweeper clears expired durationMs faults; no new message types — just clear.
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, f] of faults) {
+    if (f && f.expiresAt && now > f.expiresAt) faults.delete(key);
+  }
+}, 250);
 
 function publicTeam(t) {
   return {
@@ -92,12 +105,13 @@ function netInfo() {
   const ips = lanIps();
   return { port: activePort, ips, controllerUrl: ips.length ? `http://${ips[0]}:${activePort}/controller` : null };
 }
+function spectatorCount() { let n = 0; for (const s of spectators) { try { if (s && s.readyState === 1) n++; } catch {} } return n; }
 function lobbyState() {
-  return { teams: teams.map(publicTeam), flow: session.flow, pointsTable: session.pointsTable, raceIndex: session.raceIndex, laps: session.settings.laps ?? 3, totalRaces: session.settings.raceCount || 3 };
+  return { teams: teams.map(publicTeam), flow: session.flow, pointsTable: session.pointsTable, raceIndex: session.raceIndex, laps: session.settings.laps ?? 3, totalRaces: session.settings.raceCount || 3, spectatorCount: spectatorCount() };
 }
 function hostLobbyState() {
   const now = Date.now();
-  return { teams: teams.map((t) => ({ ...publicTeam(t), lastInputAgeMs: lastInputAt.has(t.id) ? now - lastInputAt.get(t.id) : null })), flow: session.flow, pointsTable: session.pointsTable, raceIndex: session.raceIndex, laps: session.settings.laps ?? 3, totalRaces: session.settings.raceCount || 3 };
+  return { teams: teams.map((t) => ({ ...publicTeam(t), lastInputAgeMs: lastInputAt.has(t.id) ? now - lastInputAt.get(t.id) : null })), flow: session.flow, pointsTable: session.pointsTable, raceIndex: session.raceIndex, laps: session.settings.laps ?? 3, totalRaces: session.settings.raceCount || 3, spectatorCount: spectatorCount() };
 }
 function broadcastLobby() {
   const state = { type: 'lobby', state: lobbyState() };
@@ -218,6 +232,7 @@ function handleJson(ws, m) {
     }
     case 'hostApplyResults': applyResults(m.results); break;
     case 'hostResetSession': session = defaultSession(); persist(); pushSession(); broadcastLobby(); break;
+    case 'hostResetSlots': resetSlots(); break;
     case 'hostRemove': removeTeam(m.teamId); break;
     case 'hostForceReady': { const t = teams[m.teamId - 1]; if (t) { t.ready = true; broadcastLobby(); } break; }
     case 'hostReplaceAI': { const t = teams[m.teamId - 1]; if (t) { t.ai = true; t.ready = true; broadcastLobby(); } break; }
@@ -230,12 +245,36 @@ function handleJson(ws, m) {
 }
 
 function attach(ws, t, m) {
-  if (t.ws && t.ws !== ws) { try { t.ws._role = 'spectator'; spectators.add(t.ws); t.ws.send(JSON.stringify({type:'spectating'})); } catch {} }
+  const isReclaim = !!(m.token && t.reconnectToken === m.token);
+  if (t.ws && t.ws !== ws && t.ws.readyState === 1) { try { t.ws._role = 'spectator'; spectators.add(t.ws); t.ws.send(JSON.stringify({type:'spectating'})); } catch {} }
   t.ws = ws; ws._role = 'client'; ws._teamId = t.id;
   t.connected = true; t.sessionId = nextSession++; t.reconnectToken = m.token || Math.random().toString(36).slice(2, 10);
   t.ai = false; t.lastSeen = Date.now(); t.ready = false;
-  if (typeof m.name === 'string' && m.name.trim()) t.name = m.name.trim().slice(0, 16);
+  // Token reclaim keeps its original name (no rename on the reclaim path).
+  if (!isReclaim && typeof m.name === 'string' && m.name.trim()) {
+    let desired = m.name.trim().slice(0, 16);
+    const collides = teams.some((x) => x !== t && x.connected && typeof x.name === 'string' && x.name.toLowerCase() === desired.toLowerCase());
+    if (collides) desired = (desired.slice(0, 13) + '(2)').slice(0, 16);
+    if (desired) t.name = desired;
+  }
   send(ws, { type: 'joined', teamId: t.id, sessionId: t.sessionId, token: t.reconnectToken, color: TEAM_COLORS[t.colorIdx % TEAM_COLORS.length], flow: session.flow });
+  broadcastLobby();
+}
+
+/** Between-events fresh start WITHOUT dropping connected phones. */
+function resetSlots() {
+  for (const t of teams) {
+    if (!t.connected) {
+      t.name = `Team ${t.id}`;
+      t.characterIdx = t.id - 1;
+      t.ready = false;
+      t.ai = false;
+      t.reconnectToken = null;
+      t.reconnectDeadline = 0;
+    } else {
+      t.ready = false;
+    }
+  }
   broadcastLobby();
 }
 
@@ -256,7 +295,9 @@ function resumeTeam(teamId) { const t = teams[teamId - 1]; if (t) { t.ai = false
 function setFault(teamId, f) {
   const key = teamId === '*' || teamId == null ? '*' : Number(teamId);
   if (!f) { faults.delete(key); return; }
-  faults.set(key, { delayMs: f.delayMs || 0, jitterMs: f.jitterMs || 0, pause: !!f.pause });
+  const rec = { delayMs: f.delayMs || 0, jitterMs: f.jitterMs || 0, pause: !!f.pause };
+  if (typeof f.durationMs === 'number' && f.durationMs > 0) rec.expiresAt = Date.now() + f.durationMs;
+  faults.set(key, rec);
 }
 function onClose(ws) {
   log(`close role=${ws._role} team=${ws._teamId || '-'} connected=${teams.filter((t) => t.connected).length}`);

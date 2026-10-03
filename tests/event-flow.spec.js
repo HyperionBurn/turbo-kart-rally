@@ -193,7 +193,8 @@ test('host can force ready, replace a team with AI, and reset the tournament', a
 
   // session reset clears the leaderboard
   await host.evaluate(() => window.__game.send({ type: 'hostResetSession' }));
-  await host.waitForTimeout(600);
+  await expect(host.locator('.event-ui')).toHaveAttribute('data-screen', 'lobby', { timeout: 20000 });
+  await expect(host.locator('#ev-start')).toBeVisible({ timeout: 20000 });
   await host.click('#ev-start', { force: true });
   await host.click('#ev-go', { force: true });
   await host.waitForFunction(() => ['countdown', 'racing'].includes(window.__game.eventDebug().state), null, { timeout: 60000 });

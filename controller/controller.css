@@ -168,6 +168,7 @@ header { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 34px); le
   #conn-bar[data-state="connecting"] #conn-dot, #conn-bar[data-state="reconnecting"] #conn-dot { animation: none; }
   #countdown-overlay.show { animation: none; }
   #event-chip.show, .pad-btn.shake { animation: none; }
+  #rocket-hint, .pad-btn.gas.rocket, #wrongway-banner { animation: none; }
 }
 
 /* ---- results ---- */
@@ -215,3 +216,41 @@ header { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 34px); le
 
 /* ---- FINAL LAP gold flash on the shared event chip ---- */
 #event-chip.final { border-color: #ffd700; color: #ffd700; box-shadow: 0 0 22px rgba(255,215,0,.7); }
+
+/* ---- rocket-start hint: countdown/prerace only, above the pad, never blocks input ---- */
+#rocket-hint {
+  position: absolute; left: 12px; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 152px);
+  text-align: center; font-weight: 900; letter-spacing: 1px;
+  font-size: clamp(15px, 4.2vw, 22px); color: #69f0ae;
+  background: rgba(18, 51, 34, .92); border: 2px solid #43a047; border-radius: 999px;
+  padding: 8px 16px; z-index: 7; pointer-events: none;
+  animation: rocketPulse .7s ease-in-out infinite;
+}
+#rocket-hint[hidden] { display: none; }
+@keyframes rocketPulse { 50% { transform: scale(1.05); box-shadow: 0 0 18px rgba(67,160,71,.8); } }
+.pad-btn.gas.rocket { animation: rocketPulse .7s ease-in-out infinite; border-color: #69f0ae; }
+
+/* ---- wrong-way alert: full-width banner, pointer-transparent ---- */
+#wrongway-banner {
+  position: absolute; top: calc(env(safe-area-inset-top, 0px) + 70px); left: 0; right: 0;
+  text-align: center; font-weight: 900; letter-spacing: 2px;
+  font-size: clamp(20px, 6vw, 32px); color: #fff;
+  background: rgba(229, 57, 53, .94); padding: 10px 8px; z-index: 8; pointer-events: none;
+  animation: wrongFlash .5s steps(2, start) infinite;
+}
+#wrongway-banner[hidden] { display: none; }
+@keyframes wrongFlash { 50% { background: rgba(142, 20, 16, .94); } }
+
+/* ---- race context lines (lobby + results): hide when raceIndex/totalRaces unknown ---- */
+#lobby-race-line, #end-race-line {
+  font-size: 13px; font-weight: 900; letter-spacing: 2px; color: #9fb0e8; text-align: center;
+}
+#lobby-race-line[hidden], #end-race-line[hidden] { display: none; }
+#end-race-line { color: #fdd835; }
+
+/* ---- item use caption: visible only while an item is held ---- */
+#item-use-hint {
+  text-align: center; font-size: 10px; font-weight: 900; letter-spacing: 1px;
+  color: #fdd835; opacity: .95; pointer-events: none; line-height: 1;
+}
+#item-use-hint[hidden] { display: none; }

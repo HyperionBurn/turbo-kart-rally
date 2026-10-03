@@ -4,13 +4,39 @@
 const { test, expect } = require('@playwright/test');
 const HOST = 'http://127.0.0.1:8081';
 
+// Alignment needs ≥1 connected team: the lobby START guard (correctly) blocks empty
+// races. A raw socket join is enough — no browser, no rendering, no input needed.
+const WebSocket = require('ws');
+async function ensureTeam(name = 'ALIGN') {
+  const ws = new WebSocket('ws://127.0.0.1:8081/ws');
+  await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej); });
+  ws.send(JSON.stringify({ type: 'join', name }));
+  await new Promise((res, rej) => {
+    const t = setTimeout(() => rej(new Error('no join reply')), 15000);
+    ws.on('message', (d, b) => {
+      if (b) return;
+      try { const m = JSON.parse(d.toString()); if (m.type === 'joined') { clearTimeout(t); res(m); } } catch {}
+    });
+  });
+  return ws;
+}
+
+const openSlots = [];
+test.afterAll(async () => { for (const ws of openSlots.splice(0)) { try { ws.close(); } catch {} } });
+
 async function startRace(page) {
-  await page.waitForFunction(() => window.__game && window.__game.state === 'title', null, { timeout: 60000 });
-  await page.click('#btn-event', { force: true });
-  await page.waitForTimeout(500);
-  await page.click('#ev-start', { force: true });
-  await page.waitForTimeout(300);
-  await page.click('#ev-go', { force: true });
+  const slot = await ensureTeam();
+  openSlots.push(slot);
+  // free the slot when the test's page closes so later tests start clean
+  page.on('close', () => { try { slot.close(); } catch {} });
+    await page.waitForFunction(() => window.__game && window.__game.state === 'title', null, { timeout: 60000 });
+    await page.click('#btn-event', { force: true });
+    await page.waitForTimeout(500);
+    // guard must be satisfied before continuing (proves the guard works, too)
+    await expect(page.locator('#ev-start')).toBeEnabled({ timeout: 20000 });
+    await page.click('#ev-start', { force: true });
+    await page.waitForTimeout(300);
+    await page.click('#ev-go', { force: true });
   for (let i = 0; i < 240; i++) {
     const s = await page.evaluate(() => {
       const d = window.__game.eventDebug();

@@ -39,6 +39,7 @@
       <div id="net-pill" title="Tap for details"><span id="conn-dot2" aria-hidden="true"></span><span id="ping">--</span>&nbsp;ms&nbsp;·&nbsp;<span id="ping-quality">…</span></div>
     </header>
     <div id="net-detail" hidden></div>
+    <div id="lobby-race-line" hidden></div>
     <div id="howto-card">
       <div id="howto-full">
         <div class="howto-title">HOW TO PLAY</div>
@@ -78,6 +79,8 @@
     </div>
     <div id="countdown-overlay" aria-live="assertive"></div>
     <div id="event-chip" hidden aria-live="polite"></div>
+    <div id="wrongway-banner" hidden role="alert">WRONG WAY! ↩</div>
+    <div id="rocket-hint" hidden>HOLD GAS FOR BOOST! 🟢</div>
     <div id="batt-warn" hidden>LOW BATTERY — plug in after this race</div>
     <div class="pad">
       <div class="side left">
@@ -89,6 +92,7 @@
       </div>
       <div class="side mid">
         <button class="pad-btn item" id="ctl-item" type="button" aria-label="Use item">ITEM</button>
+        <div id="item-use-hint" hidden>TAP TO USE ▲</div>
         <button class="pad-btn look" id="ctl-look" type="button" aria-label="Look back">LOOK</button>
       </div>
       <div class="side right">
@@ -101,6 +105,7 @@
   <!-- END -->
   <section id="view-end" class="view" aria-label="Results">
     <h2 id="end-title">RESULTS</h2>
+    <div id="end-race-line" hidden></div>
     <div id="end-place" aria-live="polite"></div>
     <div id="end-detail"></div>
     <div id="end-champ" hidden></div>

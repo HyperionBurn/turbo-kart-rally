@@ -541,6 +541,10 @@ button { font: inherit; color: inherit; }
 .ev-board table { margin: 0 auto 14px; border-collapse: collapse; }
 .ev-board th, .ev-board td { padding: 8px 14px; border-bottom: 1px solid #232a52; font-size: 16px; }
 .ev-board .tot { font-weight: 900; color: #fdd835; font-variant-numeric: tabular-nums; }
+.ev-ticker { position: absolute; top: 8px; left: 8px; z-index: 6; pointer-events: none; font-size: 11px; font-weight: 900; letter-spacing: 1px; color: #dfe6ff; background: rgba(4,8,20,.72); border: 1px solid #2a3050; border-radius: 8px; padding: 4px 8px; max-width: 46vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-ticker[hidden] { display: none !important; }
+.res-time.res-gap { color: #fdd835; font-size: 15px; font-weight: 900; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+.ev-most-wins { margin: 10px 0 2px; font-size: 13px; font-weight: 900; letter-spacing: 2px; color: #9fb0e8; }
 
 .ev-board.final { border-color: #fdd835; box-shadow: 0 0 60px rgba(253,216,53,.25); }
 .champ-banner { margin: 0 0 14px; padding: 18px 10px 14px; border-radius: 16px; background: linear-gradient(180deg, rgba(253,216,53,.18), rgba(253,216,53,.04)); border: 2px solid #fdd835; }
