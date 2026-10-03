@@ -586,7 +586,71 @@ function autoResume() {
 
 // ---------------- lobby
 const charGrid = $('char-grid');
-charGrid.innerHTML = CHARACTERS.map((c, i) => `<button class="char" data-i="${i}"><span class="dot" style="background:${hex(c.color)}"></span>${c.name}</button>`).join('');
+// Compact per-card stat bars for speed/accel/handling. Tolerant: a missing or
+// non-numeric stat hides that bar instead of crashing or rendering NaN.
+function statNum(entry, key) {
+  try {
+    const s = entry && entry.stats;
+    if (!s || typeof s !== 'object') return null;
+    const raw = s[key];
+    if (raw == null || raw === '') return null;
+    if (typeof raw !== 'number' && typeof raw !== 'string') return null;
+    const v = +raw;
+    if (!Number.isFinite(v)) return null;
+    return Math.max(0, Math.min(5, v));
+  } catch { return null; }
+}
+function barRow(cls, label, val) {
+  if (val == null) return '';
+  const pct = Math.round((val / 5) * 100);
+  return `<span class="bar ${cls}"><b>${label}</b><span class="track"><span class="fill" style="width:${pct}%"></span></span></span>`;
+}
+function cardBars(entry) {
+  const parts = [
+    barRow('spd', 'S', statNum(entry, 'speed')),
+    barRow('acc', 'A', statNum(entry, 'accel')),
+    barRow('han', 'H', statNum(entry, 'handling')),
+  ].filter(Boolean).join('');
+  return parts ? `<span class="bars">${parts}</span>` : '';
+}
+// One-line flavor tag derived purely client-side from the entry's best stat.
+function charTag(entry) {
+  const s = statNum(entry, 'speed'), a = statNum(entry, 'accel'), h = statNum(entry, 'handling');
+  if (s == null && a == null && h == null) return 'ALL-ROUNDER';
+  const vals = [s ?? -1, a ?? -1, h ?? -1];
+  const mx = Math.max(...vals);
+  const winners = vals.filter((v) => v === mx).length;
+  if (winners !== 1) return 'ALL-ROUNDER';
+  if (mx === s) return 'FASTEST ON STRAIGHTS';
+  if (mx === h) return 'CORNER ARTIST';
+  return 'QUICK OFF THE LINE';
+}
+function renderDetail() {
+  try {
+    const box = $('char-detail');
+    if (!box) return;
+    const entry = CHARACTERS[state.charIdx] || CHARACTERS[0];
+    const dot = $('char-detail-dot'), nm = $('char-detail-name'),
+      tag = $('char-detail-tag'), bars = $('char-detail-bars');
+    if (dot) {
+      try { dot.style.background = hex(entry.color); } catch {}
+    }
+    // Team-color ring: same source as the lobby chip (state.color from server).
+    try { box.style.borderColor = state.color || '#2a3050'; } catch {}
+    if (nm) nm.textContent = entry.name || `Racer ${state.charIdx + 1}`;
+    if (tag) tag.textContent = charTag(entry);
+    if (bars) {
+      const html = [
+        barRow('spd', 'S', statNum(entry, 'speed')),
+        barRow('acc', 'A', statNum(entry, 'accel')),
+        barRow('han', 'H', statNum(entry, 'handling')),
+      ].filter(Boolean).join('');
+      bars.innerHTML = html;
+    }
+  } catch {}
+}
+charGrid.innerHTML = CHARACTERS.map((c, i) => `<button class="char" data-i="${i}"><span class="dot" style="background:${hex(c.color)}"></span><span class="cname">${c.name}</span>${cardBars(c)}</button>`).join('');
+renderDetail();
 charGrid.querySelectorAll('.char').forEach((el) => {
   el.addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -600,6 +664,7 @@ function renderChars(teams) {
     el.classList.toggle('sel', i === state.charIdx);
     el.classList.toggle('taken', taken.has(i));
   });
+  renderDetail();
 }
 $('ready-btn').addEventListener('pointerdown', (e) => {
   e.preventDefault();
@@ -787,4 +852,4 @@ function applyHowto() {
 
 // Light-verification hook: lets a single test page dispatch synthetic inbound
 // messages and call the pure helpers without touching the network.
-window.__tkr = { state, onMessage, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, renderBoard, playFinishJingle, setItemHeld, maybeBattWarn, buzz, beep, hapticsOn, soundOn, applyHand, applyHowto, applyPrefToggles, onFlowChange, updateRocketHint, updateWrongWay, updateRaceLines, syncItemHint };
+window.__tkr = { state, onMessage, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, renderBoard, playFinishJingle, setItemHeld, maybeBattWarn, buzz, beep, hapticsOn, soundOn, applyHand, applyHowto, applyPrefToggles, onFlowChange, updateRocketHint, updateWrongWay, updateRaceLines, syncItemHint, renderChars, renderDetail, charTag, statNum };

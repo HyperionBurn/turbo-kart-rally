@@ -121,12 +121,13 @@ export class EventUI {
       <div class="ev-lobby">
         <div class="ev-left">
           <div class="ev-kicker">SCAN TO PLAY</div>
-          <canvas id="ev-qr" width="220" height="220"></canvas>
+          <canvas id="ev-qr" width="300" height="300"></canvas>
           <div class="ev-url">${s.controllerUrl || ''}</div>
           ${s.lanWarning ? '<div class="ev-url warn">NO LAN IP FOUND — plug in Ethernet/hotspot, or type this URL on the phones</div>' : ''}
           ${s.altUrls && s.altUrls.length ? `<div class="ev-url alt">other interfaces: ${s.altUrls.join('  ')}</div>` : ''}
           <div class="ev-sub">${connected}/6 CONNECTED · ${ready} READY</div>
           <div class="ev-progress" aria-hidden="true"><i style="width:${Math.round(ready / 6 * 100)}%"></i></div>
+          <div class="ev-guide" aria-label="Host steps"><span>1 · TEAMS SCAN THE QR</span><span>2 · PICK RACER + READY (${ready}/6)</span><span>3 · PRESS CONTINUE</span></div>
           <button id="ev-start" class="btn primary big" ${canStart ? '' : 'disabled'}>${canStart ? 'CONTINUE → SETTINGS' : 'WAITING FOR TEAMS…'}</button>
           ${canStart ? '' : '<div class="ev-hint">Teams: scan the QR, pick a racer, tap READY on your phone.</div>'}
           <button id="ev-solo" class="btn ghost">← SOLO MODE</button>
@@ -339,7 +340,7 @@ function slotHtml(t) {
   const state = t.connected ? (t.ready ? 'READY' : 'IN LOBBY') : (isAI ? '🤖 AI' : 'EMPTY');
   const meta = t.connected
     ? `<div class="slot-meta ${pingClass(t.ping)}">${metaInner(t)}</div>`
-    : (isAI ? '<div class="slot-meta">computer driver</div>' : '<div class="slot-meta waiting">waiting for phone…</div>');
+    : (isAI ? '<div class="slot-meta">computer driver</div>' : '<div class="slot-meta waiting">waiting for phone… (or press AI)</div>');
   return `
     <div class="${cls}" style="--tc:${t.color};${extra}" data-team="${t.id}">
       <div class="slot-head"><span class="dot" style="background:${t.color}"></span><b>${t.name}</b><span class="slot-state">${state}</span></div>

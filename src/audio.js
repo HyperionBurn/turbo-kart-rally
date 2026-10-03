@@ -243,6 +243,40 @@ export class AudioEngine {
       const drifting = player.drifting && sp > 6 && !player.airborne;
       this.drGain.gain.setTargetAtTime(drifting ? 0.06 : 0, t, drifting ? 0.04 : 0.08);
       this.drFilter.frequency.setTargetAtTime(1300 + (player.driftLevel || 0) * 280 + Math.sin(t * 13) * 120, t, 0.05);
+    } else if (player == null && this.gameplay && !this.paused && Array.isArray(karts) && karts.length > 0) {
+      // event-mode bed: one shared hum following the top-3 unfinished karts by speed.
+      // Reuses the solo engine nodes (exactly 1 voice, no per-frame allocation).
+      let t0 = -1, t1 = -1, t2 = -1, n = 0, fast = false;
+      for (let i = 0; i < karts.length; i++) {
+        const k = karts[i];
+        if (!k || k.finished) continue;
+        let s = k.speed || 0;
+        s = s < 0 ? -s : s;
+        if (!(s >= 0)) continue;
+        n++;
+        if (s > 1) fast = true;
+        if (s >= t0) { t2 = t1; t1 = t0; t0 = s; }
+        else if (s >= t1) { t2 = t1; t1 = s; }
+        else if (s >= t2) { t2 = s; }
+      }
+      if (n === 0 || !fast) {
+        this.engGain.gain.setTargetAtTime(0, t, 0.12);
+        this.drGain.gain.setTargetAtTime(0, t, 0.05);
+      } else {
+        const m = n > 3 ? 3 : n;
+        let sum = t0;
+        if (m > 1) sum += t1;
+        if (m > 2) sum += t2;
+        const avg = sum / m;
+        const f = 48 + avg * 2.3;
+        this.engA.frequency.setTargetAtTime(f, t, 0.06);
+        this.engB.frequency.setTargetAtTime(f * 1.005, t, 0.06);
+        this.engSub.frequency.setTargetAtTime(f * 0.5, t, 0.06);
+        this.engLfo.frequency.setTargetAtTime(10 + avg * 0.6, t, 0.1);
+        this.engFilter.frequency.setTargetAtTime(260 + avg * 45, t, 0.08);
+        this.engGain.gain.setTargetAtTime(0.13 + Math.min(avg, 40) * 0.0016, t, 0.1);
+        this.drGain.gain.setTargetAtTime(0, t, 0.05);
+      }
     } else {
       this.engGain.gain.setTargetAtTime(0, t, 0.12);
       this.drGain.gain.setTargetAtTime(0, t, 0.05);

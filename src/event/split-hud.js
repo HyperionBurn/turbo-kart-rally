@@ -144,6 +144,26 @@ export class SplitHUD {
       if (c.warnTxt !== warnTxt) { r.warn.textContent = warnTxt; c.warnTxt = warnTxt; }
       if (c.warnCls !== warnCls) { p.classList.toggle('warn', warnCls); c.warnCls = warnCls; }
     }
+    // Broadcast standings go stale mid-race if built once: refresh ~2Hz, DOM only on change.
+    if (this.broadcast && this.board) {
+      this._boardT = (this._boardT || 0) + dt;
+      if (this._boardT > 0.5) { this._boardT = 0; this._refreshBoard(karts, race); }
+    }
+  }
+
+  _refreshBoard(karts, race) {
+    if (!this.board) return;
+    const laps = race ? race.laps : 3;
+    const sig = (karts || []).map((k) => `${k.teamId}:${k.place || 1}:${Math.min(k.lap || 1, laps)}:${k.finished ? 1 : 0}`).join('|');
+    if (sig === this._boardSig) return;
+    this._boardSig = sig;
+    const rows = (karts || []).map((k) => {
+      const t = this.teams && this.teams[k.teamId - 1];
+      const color = t ? t.color : '#888';
+      const lap = k.finished ? 'FIN' : `L${Math.min(k.lap || 1, laps)}`;
+      return `<div class="bc-row" style="--tc:${color}"><b>${ord(k.place || 1)}</b><span>${t ? t.name : ''}</span><i>${lap}</i></div>`;
+    }).join('');
+    this.board.innerHTML = `<div class="bc-title">STANDINGS</div>${rows}`;
   }
 
   show() { this.el.classList.add('on'); }
@@ -161,12 +181,8 @@ export class SplitHUD {
       }
       this.panels.forEach((p, i) => p.classList.toggle('bc-hidden', i !== 0));
       this.panels[0].dataset.slot = 'full';
-      const rows = (karts || []).map((k) => {
-        const t = this.teams && this.teams[k.teamId - 1];
-        const color = t ? t.color : '#888';
-        return `<div class="bc-row" style="--tc:${color}"><b>${ord(k.place || 1)}</b><span>${t ? t.name : ''}</span><i>L${Math.min(k.lap || 1, race ? race.laps : 3)}</i></div>`;
-      }).join('');
-      this.board.innerHTML = `<div class="bc-title">STANDINGS</div>${rows}`;
+      this._boardSig = null;
+      this._refreshBoard(karts, race);
       this._applyScale();
     } else {
       if (this.board) this.board.innerHTML = '';
