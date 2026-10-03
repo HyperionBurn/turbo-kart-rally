@@ -130,7 +130,7 @@ export class AudioEngine {
   _subscribe() {
     const on = (n, f) => this._offs.push(bus.on(n, (d) => { if (this.ctx) { try { f(d || {}); } catch (e) { console.warn('[audio]', n, e); } } }));
     const isP = (k) => k && k.isPlayer;
-    on('race:countdown', () => this.beep(440, 0.18, 'square', 0.22));
+    on('race:countdown', (d) => { const n = d && d.n; const f = { 3: 440, 2: 587, 1: 740 }[n] || 440; this.beep(f, 0.18, 'square', 0.22); });
     on('race:go', () => { this.beep(880, 0.55, 'square', 0.24); this.beep(1760, 0.4, 'sine', 0.08); });
     on('race:lap', (d) => { if (isP(d.kart)) this.lapChime(); });
     on('race:finalLap', () => { this.finalLapJingle(); this.tempoScale = 1.12; });
@@ -159,10 +159,12 @@ export class AudioEngine {
     on('ev:ready', (d) => { if (!d || d.ready !== false) { this.beep(659, 0.08, 'square', 0.14); this.beep(988, 0.16, 'square', 0.12); } else this.beep(330, 0.12, 'square', 0.1); });
     on('ev:select', () => this.uiClick(0));
     on('ev:locked', () => { this.beep(196, 0.12, 'sawtooth', 0.1); this.beep(147, 0.18, 'sawtooth', 0.08); });
-    on('ev:countdown', ({ n }) => this.beep(440, 0.18, 'square', 0.22));
+    on('ev:countdown', (d) => { const n = d && d.n; const f = { 3: 440, 2: 587, 1: 740 }[n] || 440; this.beep(f, 0.18, 'square', 0.22); });
     on('ev:go', () => { this.beep(880, 0.5, 'square', 0.24); this.beep(1760, 0.4, 'sine', 0.08); });
-    on('ev:points', () => { this.beep(880 + (d_place(d) || 0) * 40, 0.1, 'triangle', 0.16); });
+    on('ev:points', (d) => { this.beep(880 + (d_place(d) || 0) * 40, 0.1, 'triangle', 0.16); });
     on('ev:reveal', () => this.finalLapJingle());
+    on('race:end', () => this.drumroll());
+    on('race:leader', () => { this.beep(1046, 0.09, 'triangle', 0.12); this.beep(1318, 0.14, 'triangle', 0.1); });
     on('ev:champion', () => { this.fanfare(1); this.whoosh(0.8, 1.2); });
   }
 
@@ -368,6 +370,14 @@ export class AudioEngine {
     for (const [m, dt] of seq) { this._osc('square', mtof(m), t + dt, 0.14, 0.09); this._osc('triangle', mtof(m - 12), t + dt, 0.14, 0.08); }
     this._osc('square', mtof(88), t + 1.08, 0.6, 0.09);
     this._osc('triangle', mtof(76), t + 1.08, 0.6, 0.08);
+  }
+  drumroll() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    for (let i = 0; i < 10; i++) this._noise(t + i * 0.09, 0.07, 0.14 + i * 0.012, 'highpass', 1800, 0.7);
+    const o = this._osc('sine', 120, t + 0.95, 0.5, 0.4);
+    o.o.frequency.exponentialRampToValueAtTime(45, t + 1.4);
+    this._noise(t + 0.95, 0.4, 0.2, 'lowpass', 900);
   }
   fanfare(place = 1) {
     const t = this.ctx.currentTime + 0.05;

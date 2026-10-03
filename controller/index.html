@@ -55,6 +55,8 @@
       </span>
     </div>
     <div id="countdown-overlay" aria-live="assertive"></div>
+    <div id="event-chip" hidden aria-live="polite"></div>
+    <div id="batt-warn" hidden>LOW BATTERY — plug in after this race</div>
     <div class="pad">
       <div class="side left">
         <div class="pad-row">
@@ -78,6 +80,8 @@
   <section id="view-end" class="view" aria-label="Results">
     <h2 id="end-title">RESULTS</h2>
     <div id="end-place" aria-live="polite"></div>
+    <div id="end-detail"></div>
+    <div id="end-champ" hidden></div>
     <div id="end-body"></div>
     <p class="hint">Next race starts when the host is ready.</p>
     <button id="end-lobby-btn" type="button" class="big primary">BACK TO LOBBY</button>

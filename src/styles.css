@@ -581,6 +581,34 @@ button { font: inherit; color: inherit; }
 .sp-speed i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg,#43a047,#fdd835,#e53935); border-radius: 99px; transition: width .12s; }
 .sp-panel.warn .sp-pos { color: #ff5252; animation: slotPulse 1s ease-in-out infinite; }
 .sp-panel.first .sp-pos { color: #ffd835; }
+/* per-panel type scale (sp-sm/sp-md/sp-lg set from panel width at attach/layout;
+   fixed px sizes cap the top end so 1-2 player layouts never balloon) */
+.sp-panel.sp-sm .sp-top { font-size: 11px; }
+.sp-panel.sp-sm .sp-pos { font-size: 28px; }
+.sp-panel.sp-sm .sp-lap { font-size: 11px; }
+.sp-panel.sp-sm .sp-item { font-size: 22px; }
+.sp-panel.sp-md .sp-pos { font-size: 34px; }
+.sp-panel.sp-md .sp-lap { font-size: 12px; }
+.sp-panel.sp-md .sp-item { font-size: 26px; }
+.sp-panel.sp-lg .sp-top { font-size: 14px; }
+.sp-panel.sp-lg .sp-pos { font-size: 46px; }
+.sp-panel.sp-lg .sp-lap { font-size: 14px; top: 68px; }
+.sp-panel.sp-lg .sp-item { font-size: 32px; }
+.sp-panel.sp-lg .sp-final { font-size: 12px; top: 88px; }
+/* position-change flash: color/glow tint only, never moves layout */
+.sp-panel .sp-pos.up { color: #69f0ae; animation: spFlashUp 1s ease-out; }
+.sp-panel .sp-pos.down { color: #ff8a9a; animation: spFlashDown 1s ease-out; }
+@keyframes spFlashUp { 0% { text-shadow: 0 0 22px rgba(105,240,174,.95), 0 2px 6px rgba(0,0,0,.85); } 100% { text-shadow: 0 2px 6px rgba(0,0,0,.85); } }
+@keyframes spFlashDown { 0% { text-shadow: 0 0 22px rgba(255,82,82,.95), 0 2px 6px rgba(0,0,0,.85); } 100% { text-shadow: 0 2px 6px rgba(0,0,0,.85); } }
+/* FINAL LAP badge: compact tag next to the lap readout, hidden when empty/finished */
+.sp-final { position: absolute; top: 74px; left: 12px; font-size: 11px; font-weight: 900; letter-spacing: 2px;
+  color: #111; background: linear-gradient(180deg,#fff27a,#ffb21f); border-radius: 8px; padding: 2px 8px;
+  text-shadow: none; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+.sp-final:empty { display: none; }
+/* held-item pill so the glyph reads over bright track scenery */
+.sp-item { background: rgba(4,8,20,.62); border: 2px solid rgba(255,255,255,.75); border-radius: 12px;
+  padding: 2px 8px; min-width: 44px; min-height: 40px; display: flex; align-items: center; justify-content: center; }
+.sp-item:empty { display: none; }
 .split-hud.broadcast .sp-panel.bc-hidden { display: none; }
 .bc-board { position: absolute; top: 12px; right: 12px; width: 210px; background: rgba(4,8,20,.78); border: 1px solid #2a3050; border-radius: 14px; padding: 10px 12px; }
 .bc-title { font-size: 11px; letter-spacing: 3px; color: #8892b0; margin-bottom: 6px; }
@@ -589,6 +617,10 @@ button { font: inherit; color: inherit; }
 .bc-row b { color: var(--tc, #ffd835); font-weight: 900; width: 34px; }
 .bc-row span { flex: 1; font-weight: 700; }
 .bc-row i { color: #8892b0; font-style: normal; font-size: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .sp-pos.up, .sp-pos.down, .sp-panel.warn .sp-pos { animation: none !important; }
+  .sp-speed i { transition: none; }
+}
 
 /* event banner */
 .event-banner { position: absolute; top: 30%; left: 0; right: 0; text-align: center; font-size: 110px; font-weight: 900; letter-spacing: 8px; color: #fff; text-shadow: 0 6px 30px rgba(0,0,0,.8); opacity: 0; pointer-events: none; }

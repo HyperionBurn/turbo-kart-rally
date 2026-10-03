@@ -216,7 +216,7 @@ roulette ticks, item use/hit/explosion, countdown beeps, lap/final-lap jingle, f
 music loop (and faster tempo on final lap). Unlock on first user gesture. Master volume + mute toggle (M key).
 
 ## Event catalogue (bus)
-race:countdown {n} Â· race:go Â· race:lap {kart, lap} Â· race:finalLap Â· race:finish {kart, place} Â· race:end Â· race:wrongWay {active}
+race:countdown {n} Â· race:go Â· race:lap {kart, lap} Â· race:finalLap Â· race:leader {kart, prev, teamId} Â· race:finish {kart, place} Â· race:end Â· race:wrongWay {active}
 kart:driftStart Â· kart:driftLevel Â· kart:driftEnd Â· kart:miniTurbo Â· kart:boost Â· kart:hit Â· kart:wallBump Â· kart:jump Â· kart:land Â· kart:bump
 item:pickup Â· item:roulette Â· item:got Â· item:use Â· item:hit Â· item:explode Â· item:lightning
 game:state {state}  ('title'|'select'|'intro'|'countdown'|'racing'|'finished'|'paused')

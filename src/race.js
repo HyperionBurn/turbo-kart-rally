@@ -197,6 +197,14 @@ export class RaceManager {
       return b.raceProgress - a.raceProgress;
     });
     for (let i = 0; i < s.length; i++) s[i].place = i + 1;
+    // leader-change signal for presentation (audio sting, HUD flash). Fires only while
+    // racing, never for the initial grid sort, and stays silent in attract mode.
+    const lead = s[0];
+    if (this.phase === 'racing' && lead && this._leader !== lead) {
+      const prev = this._leader;
+      this._leader = lead;
+      if (prev) this._emit('race:leader', { kart: lead, prev, teamId: lead.teamId || 0 });
+    } else if (lead && !this._leader) this._leader = lead;
   }
 
   _updateWrongWay(dt) {

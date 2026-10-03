@@ -11,8 +11,10 @@
   table { border-collapse: collapse; min-width: 720px; }
   th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid #232a52; font-variant-numeric: tabular-nums; }
   .good { color: #69f0ae; } .warn { color: #ffd54f; } .bad { color: #ff5252; }
+  .ok { color: #ffd54f; }
   button { background: #1b2140; color: #fff; border: 1px solid #323b6b; border-radius: 8px; padding: 6px 10px; margin: 2px; cursor: pointer; }
   button:hover { background: #232a52; }
+  button.armed { background: #7c4dff; border-color: #b39ddb; }
   .row { margin: 4px 0; }
 </style>
 </head>
@@ -20,7 +22,7 @@
 <h1>DIAGNOSTICS</h1>
 <p id="conn">connecting…</p>
 <h2>TEAM LINK QUALITY</h2>
-<table id="teams"><thead><tr><th>Team</th><th>Connected</th><th>RTT p50</th><th>p95</th><th>jitter</th><th>ready</th><th>AI</th></tr></thead><tbody></tbody></table>
+<table id="teams"><thead><tr><th>Team</th><th>Connected</th><th>RTT p50</th><th>p95</th><th>jitter</th><th>Quality</th><th>ready</th><th>AI</th><th>State</th></tr></thead><tbody></tbody></table>
 <h2>FAULT INJECTION (Test D)</h2>
 <div id="faults"></div>
 <h2>SMOKE TESTS</h2>
@@ -41,12 +43,40 @@ Record phone + projector at 240 FPS. <code>latency_ms = frames_between_events / 
     let m; try { m = JSON.parse(e.data); } catch { return; }
     if (m.type === 'lobby') render(m.state);
   };
+  // Same link-quality words + thresholds as phones (controller.js linkQuality):
+  // p50 <= 30ms with jitter <= 12ms -> EXCELLENT, p50 <= 80ms -> OK, else LAGGY.
+  function linkQuality(p50, jitter) {
+    if (!p50) return { label: '…', cls: '' };
+    if (p50 <= 30 && jitter <= 12) return { label: 'EXCELLENT', cls: 'good' };
+    if (p50 <= 80) return { label: 'OK', cls: 'ok' };
+    return { label: 'LAGGY', cls: 'bad' };
+  }
+  function teamState(t) {
+    if (t.connected) return { label: 'live', cls: 'good' };
+    if (t.ai) return { label: 'AI driving', cls: 'warn' };
+    return { label: 'reconnecting…', cls: 'bad' };
+  }
   function render(state) {
     const tb = $('teams').querySelector('tbody');
     tb.innerHTML = state.teams.map((t) => {
-      const q = t.p95 <= 30 ? 'good' : t.p95 <= 60 ? 'warn' : 'bad';
-      return `<tr><td>${t.name}</td><td>${t.connected ? '●' : '○'}</td><td>${t.ping || '--'}</td><td class="${q}">${t.p95 || '--'}</td><td>${t.jitter || '--'}</td><td>${t.ready ? '✓' : ''}</td><td>${t.ai ? 'AI' : ''}</td></tr>`;
+      const q = linkQuality(t.ping, t.jitter);
+      const s = teamState(t);
+      return `<tr><td>${t.name}</td><td>${t.connected ? '●' : '○'}</td><td>${t.ping || '--'}</td><td>${t.p95 || '--'}</td><td>${t.jitter || '--'}</td><td class="${q.cls}">${q.label}</td><td>${t.ready ? '✓' : ''}</td><td>${t.ai ? 'AI' : ''}</td><td class="${s.cls}">${s.label}</td></tr>`;
     }).join('');
+  }
+  // The fault panel is static (independent of lobby state) so it is built once:
+  // rebuilding it on every lobby message would wipe the active-button highlight.
+  const activeFault = new Map(); // teamKey -> armed button label
+  function arm(row, b, k) {
+    row.querySelectorAll('button').forEach((x) => { x.classList.remove('armed'); x.removeAttribute('aria-pressed'); });
+    b.classList.add('armed'); b.setAttribute('aria-pressed', 'true');
+    activeFault.set(String(k), b.textContent);
+  }
+  function disarm(row, b, k) {
+    b.classList.remove('armed'); b.removeAttribute('aria-pressed');
+    if (activeFault.get(String(k)) === b.textContent) activeFault.delete(String(k));
+  }
+  function buildFaults() {
     $('faults').innerHTML = ['*', 1, 2, 3, 4, 5, 6].map((k) =>
       `<div class="row"><b>${k === '*' ? 'ALL' : 'Team ' + k}:</b>
         <button data-k="${k}" data-d="20" data-j="5">+20ms</button>
@@ -54,19 +84,28 @@ Record phone + projector at 240 FPS. <code>latency_ms = frames_between_events / 
         <button data-k="${k}" data-d="100" data-j="20">+100ms</button>
         <button data-k="${k}" data-d="0" data-j="30">jitter</button>
         <button data-k="${k}" data-pause="1">pause 3s</button>
-        <button data-k="${k}">clear</button></div>`).join('');
+        <button data-k="${k}" data-clear="1">clear</button></div>`).join('');
     $('faults').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
       const k = b.dataset.k === '*' ? '*' : +b.dataset.k;
+      const row = b.closest('.row');
+      if (b.dataset.clear) {
+        if (!confirm(`Clear injected fault on ${k === '*' ? 'ALL teams' : 'Team ' + k}?`)) return;
+        ws.send(JSON.stringify({ type: 'fault', teamId: k, fault: null }));
+        row.querySelectorAll('button').forEach((x) => { x.classList.remove('armed'); x.removeAttribute('aria-pressed'); });
+        activeFault.delete(String(k));
+        return;
+      }
       if (b.dataset.pause) {
         ws.send(JSON.stringify({ type: 'fault', teamId: k, fault: { pause: true } }));
-        setTimeout(() => ws.send(JSON.stringify({ type: 'fault', teamId: k, fault: null })), 3000);
-      } else if (b.dataset.d === undefined && !b.dataset.j) {
-        ws.send(JSON.stringify({ type: 'fault', teamId: k, fault: null }));
+        arm(row, b, k);
+        setTimeout(() => disarm(row, b, k), 3000);
       } else {
         ws.send(JSON.stringify({ type: 'fault', teamId: k, fault: { delayMs: +b.dataset.d, jitterMs: +b.dataset.j } }));
+        arm(row, b, k);
       }
     }));
   }
+  buildFaults();
 </script>
 </body>
 </html>

@@ -99,6 +99,37 @@ header { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 34px); le
 #countdown-overlay.show { display: flex; animation: pop .9s ease-out; }
 #countdown-overlay.go { color: #69f0ae; }
 @keyframes pop { 0% { transform: scale(1.5); opacity: 0; } 20% { transform: scale(1); opacity: 1; } 100% { opacity: 1; } }
+
+/* ---- race event chip: overtake / lap / item feedback.
+   Own slot below the HUD so it never fights the fullscreen countdown overlay. */
+#event-chip {
+  position: absolute; top: calc(env(safe-area-inset-top, 0px) + 108px); left: 50%; transform: translateX(-50%);
+  display: none; align-items: center; justify-content: center;
+  padding: 10px 22px; border-radius: 999px; font-weight: 900; letter-spacing: 1px;
+  font-size: clamp(18px, 5vw, 26px); white-space: nowrap;
+  background: rgba(20,26,51,.92); border: 2px solid #fdd835; color: #fff;
+  z-index: 7; pointer-events: none;
+}
+#event-chip[hidden] { display: none; }
+#event-chip.show { display: flex; animation: chipPop .25s ease-out; }
+#event-chip.up { border-color: #69f0ae; color: #69f0ae; }
+#event-chip.down { border-color: #ff8a80; color: #ff8a80; }
+#event-chip.lap { border-color: #fdd835; color: #fdd835; }
+#event-chip.item { border-color: #fff; color: #fff; }
+#event-chip.none { border-color: #8892b0; color: #8892b0; font-size: 16px; }
+@keyframes chipPop { 0% { transform: translateX(-50%) scale(1.4); opacity: 0; } 100% { transform: translateX(-50%) scale(1); opacity: 1; } }
+
+/* ---- low-battery note: subtle, one-time, never blocks input ---- */
+#batt-warn {
+  position: absolute; top: calc(env(safe-area-inset-top, 0px) + 80px); left: 0; right: 0;
+  text-align: center; font-size: 11px; font-weight: 800; letter-spacing: 1.5px;
+  color: #ffd54f; opacity: .85; z-index: 5; pointer-events: none;
+}
+#batt-warn[hidden] { display: none; }
+
+/* ---- empty-item tap acknowledgement ---- */
+.pad-btn.shake { animation: shake .3s ease; }
+@keyframes shake { 25% { transform: translateX(-5px); } 50% { transform: translateX(5px); } 75% { transform: translateX(-3px); } }
 .pad {
   position: absolute; inset: auto 0 0 0; top: calc(env(safe-area-inset-top, 0px) + 76px);
   display: flex; padding: 6px 12px calc(env(safe-area-inset-bottom, 0px) + 12px); box-sizing: border-box; gap: 10px;
@@ -136,9 +167,12 @@ header { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 34px); le
 @media (prefers-reduced-motion: reduce) {
   #conn-bar[data-state="connecting"] #conn-dot, #conn-bar[data-state="reconnecting"] #conn-dot { animation: none; }
   #countdown-overlay.show { animation: none; }
+  #event-chip.show, .pad-btn.shake { animation: none; }
 }
 
 /* ---- results ---- */
 #end-place { font-size: clamp(40px, 12vw, 72px); font-weight: 900; letter-spacing: 2px; }
-#end-detail { color: #9fb0e8; font-size: 15px; margin-bottom: 6px; }
+#end-detail { color: #9fb0e8; font-size: 15px; margin-bottom: 6px; text-align: center; }
+#end-champ { font-size: clamp(18px, 5vw, 28px); font-weight: 900; color: #fdd835; text-align: center; text-shadow: 0 2px 12px rgba(253,216,53,.4); }
+#end-champ[hidden] { display: none; }
 #end-body { color: #dfe6ff; }

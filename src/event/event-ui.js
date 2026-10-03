@@ -32,7 +32,13 @@ export class EventUI {
       // ping/jitter changed — patch numbers in place without rebuilding DOM
       state.teams.forEach((t, i) => {
         const slot = this.el.querySelectorAll('.slot')[i];
-        if (slot) slot.querySelector('.slot-meta').innerHTML = t.connected ? `${t.ping || 0}ms · batt ${t.battery != null ? t.battery + '%' : '--'}` : '&nbsp;';
+        if (!slot) return;
+        const meta = slot.querySelector('.slot-meta');
+        if (!meta) return;
+        if (t.connected) {
+          meta.className = `slot-meta ${pingClass(t.ping)}`;
+          meta.innerHTML = metaInner(t);
+        }
       });
       this.lobby = state;
       return;
@@ -100,12 +106,21 @@ export class EventUI {
       <div class="ev-settings">
         <h2>RACE SETTINGS</h2>
         <div class="opt-row"><span>Laps</span><div>${[1, 3, 5].map((n) => `<button data-k="laps" data-v="${n}" class="${s.laps === n ? 'on' : ''}">${n}</button>`).join('')}</div></div>
+        <div class="opt-desc">How many laps each race lasts.</div>
         <div class="opt-row"><span>Difficulty</span><div>${['easy', 'normal', 'hard'].map((n) => `<button data-k="difficulty" data-v="${n}" class="${s.difficulty === n ? 'on' : ''}">${n.toUpperCase()}</button>`).join('')}</div></div>
+        <div class="opt-desc">How fast and aggressive the computer drivers are.</div>
         <div class="opt-row"><span>Items</span><div>${[true, false].map((n) => `<button data-k="items" data-v="${n}" class="${!!s.items === n ? 'on' : ''}">${n ? 'ON' : 'OFF'}</button>`).join('')}</div></div>
+        <div class="opt-desc">Pickups like shells and boosts appear on the track when ON.</div>
         <div class="opt-row"><span>AI Fill</span><div>${[0, 2].map((n) => `<button data-k="aiFill" data-v="${n}" class="${s.aiFill === n ? 'on' : ''}">${n}</button>`).join('')}</div></div>
+        <div class="opt-desc">Adds computer teams so the grid feels full.</div>
         <div class="opt-row"><span>Race speed</span><div>${['slow', 'normal', 'fast'].map((n) => `<button data-k="raceSpeed" data-v="${n}" class="${(s.raceSpeed || 'normal') === n ? 'on' : ''}">${n.toUpperCase()}</button>`).join('')}</div></div>
+        <div class="opt-desc">Changes top speed for everyone.</div>
         <div class="opt-row"><span>Camera</span><div>${['split', 'broadcast'].map((n) => `<button data-k="cameraMode" data-v="${n}" class="${s.cameraMode === n ? 'on' : ''}">${n.toUpperCase()}</button>`).join('')}</div></div>
+        <div class="opt-desc">Split shows every team; broadcast follows the leader.</div>
         <div class="opt-row"><span>Duplicate racers</span><div>${[false, true].map((n) => `<button data-k="allowDupes" data-v="${n}" class="${!!s.allowDupes === n ? 'on' : ''}">${n ? 'ALLOW' : 'BLOCK'}</button>`).join('')}</div></div>
+        <div class="opt-desc">BLOCK keeps every racer unique; ALLOW lets teams pick the same one.</div>
+        <div class="opt-row"><span>Races</span><div>${[1, 2, 3, 4, 5].map((n) => `<button data-k="raceCount" data-v="${n}" class="${(s.raceCount ?? 3) === n ? 'on' : ''}">${n}</button>`).join('')}</div></div>
+        <div class="opt-desc">How many races make up the championship.</div>
         <button id="ev-go" class="btn primary big">START RACE</button>
         <button id="ev-back" class="btn ghost">← LOBBY</button>
       </div>`;
@@ -120,14 +135,18 @@ export class EventUI {
 
   _renderPrerace() {
     const teams = (this.lobby && this.lobby.teams) || [];
+    const sess = this.session || {};
+    const total = (sess.settings && sess.settings.raceCount) || sess.raceCount || 3;
+    const idx = (sess.raceIndex || 0) + 1;
     this.el.innerHTML = `
       <div class="ev-prerace">
         <div class="ev-kicker">PALM COVE CIRCUIT</div>
-        <h1>RACE ${(this.session ? this.session.raceIndex : 0) + 1}</h1>
+        <h1>RACE ${idx} OF ${total}</h1>
         <div class="ev-grid">
-          ${teams.filter((t) => t.connected || t.ai).map((t) => `<div class="ev-racer" style="--tc:${t.color}"><b>${t.name}</b><span>${CHARACTERS[t.characterIdx] ? CHARACTERS[t.characterIdx].name : ''}</span></div>`).join('')}
+          ${teams.filter((t) => t.connected || t.ai).map((t) => `<div class="ev-racer" style="--tc:${t.color}"><b><i class="ev-dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${t.color};margin-right:8px;vertical-align:baseline"></i>${t.name}</b><span>${CHARACTERS[t.characterIdx] ? CHARACTERS[t.characterIdx].name : ''}</span></div>`).join('')}
         </div>
         <div class="ev-sub">GET READY…</div>
+        <div class="ev-controls">Hold GAS · DRIFT in corners · ITEM when lit</div>
       </div>`;
   }
 
@@ -154,7 +173,7 @@ export class EventUI {
   _renderLeaderboard() {
     const s = this.session || {};
     const scores = (s.scores || []).slice().sort((a, b) => b.total - a.total);
-    const races = s.raceCount || 3;
+    const races = s.raceCount || (s.settings && s.settings.raceCount) || 3;
     const done = (s.raceIndex || 0) >= races;
     const champ = done && scores[0] ? scores[0] : null;
     this.el.innerHTML = `
@@ -185,12 +204,21 @@ export class EventUI {
 function slotHtml(t) {
   const ch = CHARACTERS[t.characterIdx];
   const hint = t.connected && !t.ready ? '<div class="slot-hint">👉 TAP READY ON PHONE</div>' : '';
+  const isAI = !!t.ai;
+  const isEmpty = !t.connected && !t.ai;
+  const cls = ['slot', t.connected ? 'on' : '', t.ready ? 'ready' : '', isAI ? 'slot-ai' : '', isEmpty ? 'slot-empty' : ''].filter(Boolean).join(' ');
+  // No CSS access from this file: visible AI/empty treatments are inline styles.
+  const extra = isAI ? 'outline:2px solid #9fb0e8;outline-offset:2px;' : (isEmpty ? 'opacity:.6;border-style:dashed;' : '');
+  const state = t.connected ? (t.ready ? 'READY' : 'IN LOBBY') : (isAI ? '🤖 AI' : 'EMPTY');
+  const meta = t.connected
+    ? `<div class="slot-meta ${pingClass(t.ping)}">${metaInner(t)}</div>`
+    : (isAI ? '<div class="slot-meta">computer driver</div>' : '<div class="slot-meta waiting">waiting for phone…</div>');
   return `
-    <div class="slot ${t.connected ? 'on' : ''} ${t.ready ? 'ready' : ''}" style="--tc:${t.color}" data-team="${t.id}">
-      <div class="slot-head"><span class="dot" style="background:${t.color}"></span><b>${t.name}</b><span class="slot-state">${t.connected ? (t.ready ? 'READY' : 'IN LOBBY') : (t.ai ? 'AI' : 'EMPTY')}</span></div>
+    <div class="${cls}" style="--tc:${t.color};${extra}" data-team="${t.id}">
+      <div class="slot-head"><span class="dot" style="background:${t.color}"></span><b>${t.name}</b><span class="slot-state">${state}</span></div>
       <div class="slot-char">${ch ? ch.name : '—'}</div>
       ${hint}
-      <div class="slot-meta">${t.connected ? `${t.ping || 0}ms · batt ${t.battery != null ? t.battery + '%' : '--'}` : '&nbsp;'}</div>
+      ${meta}
       <div class="slot-acts">
         <button data-act="ready" data-team="${t.id}">FORCE READY</button>
         <button data-act="ai" data-team="${t.id}">AI</button>
@@ -200,7 +228,27 @@ function slotHtml(t) {
 }
 
 function ord(n) { return ['1st', '2nd', '3rd', '4th', '5th', '6th'][n - 1] || `${n}th`; }
+function pingClass(ping) {
+  const p = +ping || 0;
+  return p <= 30 ? 'ping-good' : (p <= 80 ? 'ping-ok' : 'ping-bad');
+}
+const PING_COLORS = { 'ping-good': '#69f0ae', 'ping-ok': '#fdd835', 'ping-bad': '#ff5252' };
+function battState(b) {
+  if (b == null || b === '' || isNaN(+b)) return { cls: 'batt-unknown', icon: '▱▱▱', label: 'battery unknown' };
+  const v = Math.round(+b);
+  if (v >= 60) return { cls: 'batt-full', icon: '▰▰▰', label: `battery ${v}%` };
+  if (v >= 25) return { cls: 'batt-half', icon: '▰▰▱', label: `battery ${v}%` };
+  return { cls: 'batt-low', icon: '▰▱▱', label: `battery ${v}% — low, plug the phone in` };
+}
+function metaInner(t) {
+  const pc = pingClass(t.ping);
+  const b = battState(t.battery);
+  return `<span class="ping ${pc}" style="color:${PING_COLORS[pc]}">${t.ping || 0}ms</span> · <span class="batt ${b.cls}" title="${b.label}">🔋${b.icon}</span>`;
+}
 function countUp(td, target) {
+  try {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) { td.textContent = target; return; }
+  } catch {}
   const t0 = performance.now();
   const step = (t) => {
     const k = Math.min(1, (t - t0) / 900);

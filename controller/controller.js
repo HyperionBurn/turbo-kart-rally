@@ -11,6 +11,7 @@ const state = {
   name: localStorage.getItem('tkr-name') || '', flow: 'lobby', ready: false,
   charIdx: 0, color: '#e53935', battery: null, suspended: false,
   pointsTable: [10, 8, 6, 4, 2, 1], raceIndex: 0, lastPlace: 0, lastLap: 1, itemHeld: null,
+  totalLaps: null, itemJustUsed: null, itemUsedAt: 0, lowBattWarned: false,
 };
 const log = new LinkStats();
 const clock = new ClockSync();
@@ -125,20 +126,23 @@ function onMessage(m) {
       break;
     }
     case 'lobby': {
+      const st = (m && m.state) || {};
       const prevFlow = state.flow;
-      state.flow = m.state.flow;
+      if (typeof st.flow === 'string') state.flow = st.flow;
       if (prevFlow !== state.flow) onFlowChange(prevFlow, state.flow);
-      if (Array.isArray(m.state.pointsTable)) state.pointsTable = m.state.pointsTable;
-      if (typeof m.state.raceIndex === 'number') state.raceIndex = m.state.raceIndex;
-      const me = m.state.teams.find((t) => t.id === state.teamId);
-      const readyCount = m.state.teams.filter((t) => t.connected && t.ready).length;
-      const connectedCount = m.state.teams.filter((t) => t.connected).length;
+      if (Array.isArray(st.pointsTable)) state.pointsTable = st.pointsTable;
+      if (typeof st.raceIndex === 'number') state.raceIndex = st.raceIndex;
+      if (st.settings && typeof st.settings.laps === 'number') state.totalLaps = st.settings.laps;
+      const teams = Array.isArray(st.teams) ? st.teams : [];
+      const me = teams.find((t) => t && t.id === state.teamId);
+      const readyCount = teams.filter((t) => t && t.connected && t.ready).length;
+      const connectedCount = teams.filter((t) => t && t.connected).length;
       if (me) {
         state.charIdx = me.characterIdx;
         state.ready = me.ready;
         localStorage.setItem('tkr-name', me.name);
         $('team-name').textContent = me.name;
-        renderChars(m.state.teams);
+        renderChars(teams);
         updateNetPill(me);
         $('ready-btn').textContent = state.ready ? 'READY ✓' : 'READY';
         $('ready-btn').classList.toggle('ready', state.ready);
@@ -149,8 +153,8 @@ function onMessage(m) {
           ? (readyCount >= connectedCount && connectedCount > 0 ? 'You’re READY — waiting for the host to start.' : `You’re READY — ${readyCount}/${Math.max(connectedCount, 1)} ready. Nudge your friends!`)
           : (connectedCount <= 1 ? 'Pick your racer, press READY. Host starts the race.' : `${readyCount}/${connectedCount} ready — pick your racer and tap READY.`);
       }
-      if (m.state.flow === 'prerace' || m.state.flow === 'racing' || m.state.flow === 'countdown') showView('race');
-      else if (m.state.flow === 'results' || m.state.flow === 'leaderboard') { renderEnd(); showView('end'); }
+      if (state.flow === 'prerace' || state.flow === 'racing' || state.flow === 'countdown') showView('race');
+      else if (state.flow === 'results' || state.flow === 'leaderboard') { renderEnd(); showView('end'); }
       else showView('lobby');
       break;
     }
@@ -159,6 +163,7 @@ function onMessage(m) {
       if (m.state) {
         if (Array.isArray(m.state.pointsTable)) state.pointsTable = m.state.pointsTable;
         if (typeof m.state.raceIndex === 'number') state.raceIndex = m.state.raceIndex;
+        if (m.state.settings && typeof m.state.settings.laps === 'number') state.totalLaps = m.state.settings.laps;
         if (m.state.settings && typeof m.state.settings.raceSpeed !== 'undefined') state.raceSpeed = m.state.settings.raceSpeed;
       }
       break;
@@ -171,11 +176,31 @@ function onMessage(m) {
       break;
     }
     case 'standings': {
-      const me = (m.rows || []).find((r) => r.teamId === state.teamId);
+      const rows = Array.isArray(m.rows) ? m.rows : [];
+      const me = rows.find((r) => r && r.teamId === state.teamId);
       if (me) {
-        state.lastPlace = me.place; state.lastLap = me.lap;
-        $('race-pos').textContent = `${['1st','2nd','3rd','4th','5th','6th'][me.place - 1] || ''} · L${me.lap}`;
-        setItemHeld(me.item || null);
+        const place = +me.place || 0;
+        const lap = +me.lap || 0;
+        const dir = overtakeDir(state.lastPlace, place);
+        const lapMsg = lapFlashText(state.lastLap, lap, state.totalLaps);
+        if (place) state.lastPlace = place;
+        if (lap) state.lastLap = lap;
+        const ord = ordinal(place);
+        $('race-pos').textContent = ord ? `${ord} · L${lap || state.lastLap}` : '';
+        // Held item: the host is the source of truth. A same-item echo arriving
+        // right after our optimistic clear is stale, so keep the pad cleared.
+        const now = Date.now();
+        let item = me.item || null;
+        if (item && state.itemJustUsed && item === state.itemJustUsed && (now - state.itemUsedAt) < 1500) {
+          item = null;
+        } else {
+          state.itemJustUsed = null;
+        }
+        setItemHeld(item);
+        // Lap flash wins the shared chip slot; otherwise show overtake / loss.
+        if (lapMsg) { flashEvent(lapMsg, 'lap'); buzz([0, 60, 40, 60, 40, 120]); beep(660, 0.1); setTimeout(() => beep(990, 0.14), 110); }
+        else if (dir === 'up' && place) { flashEvent(`P${place} ▲`, 'up'); buzz([0, 40, 40, 80]); beep(880, 0.09); setTimeout(() => beep(1174, 0.12), 90); }
+        else if (dir === 'down' && place) { flashEvent(`P${place} ▼`, 'down'); buzz(120); beep(220, 0.18, 'sawtooth', 0.05); }
       } else $('race-pos').textContent = '';
       break;
     }
@@ -227,6 +252,16 @@ $('net-pill').addEventListener('click', () => {
 let cdTimer = 0;
 function onFlowChange(from, to) {
   clearTimeout(cdTimer);
+  const chip = $('event-chip');
+  if (chip) { clearTimeout(eventTimer); chip.className = ''; chip.hidden = true; }
+  if (to === 'countdown' || to === 'prerace' || to === 'racing') {
+    // Fresh race: first sightings of place/lap must stay silent, and any stale
+    // held-item display is dropped (standings will re-assert it).
+    state.lastPlace = 0; state.lastLap = 1;
+    state.itemJustUsed = null;
+    setItemHeld(null);
+    maybeBattWarn();
+  }
   const ov = $('countdown-overlay');
   ov.classList.remove('show', 'go');
   if (to === 'countdown' || to === 'prerace') {
@@ -258,8 +293,57 @@ function flashCountdown(text, go) {
 function renderEnd() {
   const pts = state.pointsTable || [10, 8, 6, 4, 2, 1];
   const p = state.lastPlace || 0;
-  $('end-place').textContent = p ? ['1st','2nd','3rd','4th','5th','6th'][p - 1] : '—';
-  $('end-detail').textContent = p ? `${state.name || ('Team ' + state.teamId)} · +${pts[p - 1] ?? 0} pts` : '';
+  const ord = ordinal(p);
+  const placeEl = $('end-place'), detailEl = $('end-detail'), champEl = $('end-champ');
+  if (placeEl) placeEl.textContent = ord || '—';
+  if (detailEl) detailEl.textContent = ord ? `${state.name || ('Team ' + state.teamId)} · +${pts[p - 1] ?? 0} pts` : '';
+  if (champEl) {
+    if (p === 1) { champEl.textContent = '🏆 CHAMPION OF THE RACE'; champEl.hidden = false; }
+    else { champEl.textContent = ''; champEl.hidden = true; }
+  }
+}
+
+/** Pure race-feel helpers (kept side-effect free so they stay unit-testable). */
+function ordinal(p) { return ['1st', '2nd', '3rd', '4th', '5th', '6th'][(+p || 0) - 1] || ''; }
+/** Which way did we move? null on first sighting / no change / bad data. */
+function overtakeDir(prev, next) {
+  prev = +prev || 0; next = +next || 0;
+  if (!prev || !next || prev === next) return null;
+  return next < prev ? 'up' : 'down';
+}
+/** Lap banner text, or null when nothing worth flashing (incl. first sighting of lap 1). */
+function lapFlashText(prevLap, newLap, totalLaps) {
+  prevLap = +prevLap || 0; newLap = +newLap || 0;
+  if (prevLap < 1 || !(newLap > prevLap)) return null;
+  const t = +totalLaps || 0;
+  return t > 0 ? `LAP ${newLap}/${t}!` : `LAP ${newLap}!`;
+}
+/** Thrown projectiles vs consumed boosts. */
+function itemUseVerb(item) {
+  return (item === 'banana' || item === 'green_shell' || item === 'red_shell' || item === 'blue_shell') ? 'THROWN!' : 'USED!';
+}
+
+// Brief overlay chip for overtake / lap / item feedback. It lives in its own slot
+// below the HUD so it never fights the fullscreen countdown overlay.
+let eventTimer = 0;
+function flashEvent(text, kind) {
+  const chip = $('event-chip');
+  if (!chip) return;
+  chip.textContent = text;
+  chip.className = 'show' + (kind ? ' ' + kind : '');
+  chip.hidden = false;
+  clearTimeout(eventTimer);
+  eventTimer = setTimeout(() => { chip.className = ''; chip.hidden = true; }, 1200);
+}
+
+/** One-time, non-blocking low-battery note in the race HUD area. */
+function maybeBattWarn() {
+  if (state.lowBattWarned || state.battery == null) return;
+  if (state.battery <= 15) {
+    state.lowBattWarned = true;
+    const w = $('batt-warn');
+    if (w) w.hidden = false;
+  }
 }
 
 /** ITEM button mirrors what you're holding (the host tells us each 500 ms). */
@@ -306,8 +390,8 @@ setInterval(() => {
 }, 2000);
 // battery
 if (navigator.getBattery) navigator.getBattery().then((b) => {
-  const up = () => { state.battery = Math.round(b.level * 100); };
-  up(); b.addEventListener('levelchange', up);
+  const up = () => { state.battery = Math.round(b.level * 100); maybeBattWarn(); };
+  up(); b.addEventListener('levelchange', up); b.addEventListener('chargingchange', up);
 }).catch(() => {});
 
 // ---------------- views
@@ -402,6 +486,24 @@ function bindPad(id, key) {
 bindPad('ctl-left', 'left'); bindPad('ctl-right', 'right'); bindPad('ctl-gas', 'gas');
 bindPad('ctl-brake', 'brake'); bindPad('ctl-drift', 'drift'); bindPad('ctl-item', 'item'); bindPad('ctl-look', 'look');
 
+// Optimistic ITEM feedback: the tap feels instant (host standings confirm it).
+// Held item => flash the verb + clear the pad at once; empty pad => dull buzz + shake.
+$('ctl-item').addEventListener('pointerdown', () => {
+  if (state.flow !== 'racing' && state.flow !== 'countdown') return;
+  const held = state.itemHeld;
+  if (held) {
+    state.itemJustUsed = held; state.itemUsedAt = Date.now();
+    setItemHeld(null);
+    flashEvent(itemUseVerb(held), 'item');
+    buzz(40); beep(740, 0.08);
+  } else {
+    flashEvent('NO ITEM', 'none');
+    buzz(70);
+    const el = $('ctl-item');
+    if (el) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 350); }
+  }
+});
+
 // send input at ~30 Hz; edges ride on the next packet immediately too
 setInterval(() => {
   if (state.flow !== 'racing' && state.flow !== 'countdown') { itemEdge = hopEdge = pauseEdge = false; return; }
@@ -447,3 +549,7 @@ $('end-lobby-btn').addEventListener('click', () => showView('lobby'));
 function hex(c) { return '#' + (c >>> 0).toString(16).padStart(6, '0').slice(-6); }
 
 $('end-body').textContent = 'Race complete — check the projector for the leaderboard!';
+
+// Light-verification hook: lets a single test page dispatch synthetic inbound
+// messages and call the pure helpers without touching the network.
+window.__tkr = { state, onMessage, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, setItemHeld, maybeBattWarn };

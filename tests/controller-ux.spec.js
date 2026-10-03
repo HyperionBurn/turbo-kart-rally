@@ -73,3 +73,33 @@ test('host lobby blocks START with zero teams and hints what to do', async ({ br
   await expect(page.locator('.ev-progress')).toBeVisible();
   await page.close();
 });
+
+test('lobby hint reflects readiness and flips once ready', async ({ browser }) => {
+  const { ctx, page, errors } = await newController(browser);
+  await page.fill('#name-input', 'HINT TEST');
+  await page.click('#join-btn');
+  await expect(page.locator('#view-lobby.active')).toBeVisible({ timeout: 20000 });
+  const hint = page.locator('#lobby-hint');
+  await expect(hint).toBeVisible();
+  // pre-ready: the hint teaches the room readiness state (mentions READY either way)
+  await expect(hint).toContainText(/READY/i, { timeout: 15000 });
+  const before = await hint.textContent();
+  expect(before).not.toMatch(/you’re ready|you're ready/i);
+  // ready up (controller listens on pointerdown; click dispatches it) and expect the flip
+  await page.click('#ready-btn');
+  await expect(hint).toContainText(/you’re ready|you're ready/i, { timeout: 15000 });
+  const after = await hint.textContent();
+  expect(after).not.toBe(before);
+  expect(errors).toEqual([]);
+  await ctx.close();
+});
+
+test('end card slots exist and are empty before any race', async ({ browser }) => {
+  const { ctx, page, errors } = await newController(browser);
+  await expect(page.locator('#end-place')).toBeAttached();
+  expect(await page.locator('#end-place').textContent()).toBe('');
+  await expect(page.locator('#end-detail')).toBeAttached();
+  expect(await page.locator('#end-detail').textContent()).toBe('');
+  expect(errors).toEqual([]);
+  await ctx.close();
+});
