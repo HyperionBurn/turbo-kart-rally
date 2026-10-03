@@ -92,8 +92,15 @@ function netInfo() {
   const ips = lanIps();
   return { port: activePort, ips, controllerUrl: ips.length ? `http://${ips[0]}:${activePort}/controller` : null };
 }
+function lobbyState() {
+  return { teams: teams.map(publicTeam), flow: session.flow, pointsTable: session.pointsTable, raceIndex: session.raceIndex, laps: session.settings.laps ?? 3, totalRaces: session.settings.raceCount || 3 };
+}
+function hostLobbyState() {
+  const now = Date.now();
+  return { teams: teams.map((t) => ({ ...publicTeam(t), lastInputAgeMs: lastInputAt.has(t.id) ? now - lastInputAt.get(t.id) : null })), flow: session.flow, pointsTable: session.pointsTable, raceIndex: session.raceIndex, laps: session.settings.laps ?? 3, totalRaces: session.settings.raceCount || 3 };
+}
 function broadcastLobby() {
-  const state = { type: 'lobby', state: { teams: teams.map(publicTeam), flow: session.flow, pointsTable: session.pointsTable, raceIndex: session.raceIndex } };
+  const state = { type: 'lobby', state: lobbyState() };
   for (const c of allClients()) send(c, state);
   send(hostWs, { type: 'session', state: session });
 }
@@ -104,12 +111,16 @@ function relayBinary(buf, from) {
   const go = () => {
     if (hostWs && hostWs.readyState === 1) sendBinary(hostWs, buf);
     relayLog.push({ team: peekTeam(buf), seq: peekSeq(buf), srvIn: perfNow() });
+    const tid = peekTeam(buf);
+    if (tid >= 1 && tid <= MAX_SLOTS) lastInputAt.set(tid, Date.now());
   };
   if (delay > 0) setTimeout(go, delay); else go();
 }
 function peekTeam(buf) { try { return new DataView(buf.buffer, buf.byteOffset).getUint16(2, true); } catch { return 0; } }
 function peekSeq(buf) { try { return new DataView(buf.buffer, buf.byteOffset).getUint32(8, true); } catch { return 0; } }
 const relayLog = [];
+// teamId (1..6) -> Date.now() ms of the last relayed binary input packet; missing = never.
+const lastInputAt = new Map();
 setInterval(() => {
   if (relayLog.length && hostWs && hostWs.readyState === 1) {
     send(hostWs, { type: 'relayLog', rows: relayLog.splice(0, relayLog.length) });
@@ -120,7 +131,7 @@ setInterval(() => {
 // broadcast is missed (tab throttling, a reconnect race, or a dropped frame).
 setInterval(() => {
   if (hostWs && hostWs.readyState === 1) {
-    send(hostWs, { type: 'lobby', state: { teams: teams.map(publicTeam), flow: session.flow, pointsTable: session.pointsTable, raceIndex: session.raceIndex } });
+    send(hostWs, { type: 'lobby', state: hostLobbyState() });
   }
 }, 1000);
 
@@ -160,7 +171,8 @@ wss.on('connection', (ws, req) => {
 });
 
 function handleJson(ws, m) {
-  switch (m.type) {
+  try {
+  switch (m && m.type) {
     case 'diagHello': ws._role = 'diag'; diagSockets.add(ws);
       send(ws, { type: 'session', state: session, net: netInfo() }); broadcastLobby(); break;
     case 'hostHello': {
@@ -192,9 +204,9 @@ function handleJson(ws, m) {
     case 'ready': { const t = teams.find((x) => x.ws === ws); if (t) { t.ready = !!m.ready; broadcastLobby(); } break; }
     case 'battery': { const t = teams.find((x) => x.ws === ws); if (t) { t.battery = m.level ?? t.battery; broadcastLobby(); } break; }
     case 'hostAction': hostAction(m.action, m); break;
-    case 'hostSettings': session.settings = { ...session.settings, ...m.settings }; persist(); pushSession(); break;
+    case 'hostSettings': session.settings = { ...session.settings, ...m.settings }; persist(); pushSession(); broadcastLobby(); break;
     case 'hostFlow': session.flow = m.flow; persist(); pushSession(); broadcastLobby(); break;
-    case 'hostPoints': session.pointsTable = m.pointsTable || session.pointsTable; persist(); pushSession(); break;
+    case 'hostPoints': session.pointsTable = m.pointsTable || session.pointsTable; persist(); pushSession(); broadcastLobby(); break;
     case 'hostStandings': {
       for (const t of teams) if (t.ws) send(t.ws, { type: 'standings', rows: m.rows });
       break;
@@ -211,6 +223,9 @@ function handleJson(ws, m) {
     case 'hostReplaceAI': { const t = teams[m.teamId - 1]; if (t) { t.ai = true; t.ready = true; broadcastLobby(); } break; }
     case 'fault': setFault(m.teamId, m.fault); break;
     case 'resume': resumeTeam(m.teamId); break;
+  }
+  } catch (err) {
+    log(`handleJson error type=${m && m.type}: ${err && err.message}`);
   }
 }
 

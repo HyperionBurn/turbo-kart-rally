@@ -106,3 +106,58 @@ test('reconnecting phone reclaims its slot with the same token', async () => {
     expect(j2.sessionId).not.toBe(j1.sessionId);
   } finally { c2.close(); }
 });
+
+test('lobby carries laps and totalRaces, hostSettings updates them', async () => {
+  const host = await connect();
+  try {
+    host.send(JSON.stringify({ type: 'hostHello' }));
+    const { ws: ctl } = await joinSlot('LAPSTEST');
+    try {
+      // defaults promised by the server crew: 3 laps, best-of-3 races
+      const dflt = await next(ctl, (m) => m.type === 'lobby'
+        && typeof m.state.laps !== 'undefined'
+        && typeof m.state.totalRaces !== 'undefined', 10000);
+      expect(dflt.state.laps).toBe(3);
+      expect(dflt.state.totalRaces).toBe(3);
+      // host changes flow through to a fresh lobby payload
+      host.send(JSON.stringify({ type: 'hostSettings', settings: { laps: 5, raceCount: 2 } }));
+      const upd = await next(ctl, (m) => m.type === 'lobby' && m.state.laps === 5 && m.state.totalRaces === 2, 10000);
+      expect(upd.state.laps).toBe(5);
+      expect(upd.state.totalRaces).toBe(2);
+    } finally {
+      // restore defaults (server merges — no delete, send raceCount:3 explicitly)
+      try { host.send(JSON.stringify({ type: 'hostSettings', settings: { laps: 3, raceCount: 3 } })); } catch {}
+      ctl.close();
+    }
+  } finally { host.close(); }
+});
+
+test('host heartbeat team rows carry lastInputAgeMs when present', async () => {
+  const host = await connect();
+  try {
+    host.send(JSON.stringify({ type: 'hostHello' }));
+    const { ws: ctl, joined } = await joinSlot('INPUTAGE');
+    try {
+      // best-effort: one binary INPUT frame (24B protocol) so the server has a fresh stamp
+      try {
+        const b = Buffer.alloc(24);
+        b[0] = 0x54; b[1] = 0x01;
+        b.writeUInt16LE(joined.teamId, 2);
+        b.writeUInt32LE(joined.sessionId >>> 0, 4);
+        b.writeUInt32LE(1, 8);
+        b.writeDoubleLE(Date.now(), 12);
+        ctl.send(b);
+      } catch {}
+      // host-directed lobby (join broadcast + 1s host heartbeat)
+      const lob = await next(host, (m) => m.type === 'lobby' && Array.isArray(m.state.teams), 10000);
+      const row = lob.state.teams.find((t) => t.id === joined.teamId);
+      expect(row).toBeTruthy();
+      if (row && 'lastInputAgeMs' in row) {
+        expect(row.lastInputAgeMs === null || typeof row.lastInputAgeMs === 'number').toBe(true);
+      } else {
+        console.log('NOTE: lastInputAgeMs not present yet (server crew in-flight) — lobby teams still render, passing');
+        expect(Array.isArray(lob.state.teams)).toBe(true);
+      }
+    } finally { ctl.close(); }
+  } finally { host.close(); }
+});

@@ -176,3 +176,42 @@ header { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 34px); le
 #end-champ { font-size: clamp(18px, 5vw, 28px); font-weight: 900; color: #fdd835; text-align: center; text-shadow: 0 2px 12px rgba(253,216,53,.4); }
 #end-champ[hidden] { display: none; }
 #end-body { color: #dfe6ff; }
+
+/* ---- how-to sheet + prefs (lobby only, in-flow so READY is never covered) ---- */
+#view-lobby { justify-content: flex-start; padding-top: calc(env(safe-area-inset-top, 0px) + 76px); overflow-y: auto; }
+#howto-card {
+  width: min(92vw, 420px); box-sizing: border-box;
+  background: rgba(255,255,255,.05); border: 1px solid #2a3050; border-radius: 12px;
+  padding: 10px 12px; font-size: 13px;
+}
+#howto-card[hidden] { display: none; }
+.howto-title { font-weight: 900; letter-spacing: 2px; font-size: 12px; color: #fdd835; margin-bottom: 6px; }
+.howto-rows { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.howto-row { display: flex; align-items: center; gap: 8px; }
+.howto-key {
+  flex: none; min-width: 58px; text-align: center; font-weight: 900; font-size: 11px;
+  letter-spacing: 1px; padding: 4px 8px; border-radius: 8px; border: 2px solid #323b6b; background: #1b2140;
+}
+.howto-key.gas { border-color: #2e7d32; } .howto-key.drift { border-color: #1e88e5; } .howto-key.item { border-color: #fdd835; color: #fdd835; }
+.howto-desc { color: #dfe6ff; }
+#howto-gotit { width: 100%; padding: 8px; font-weight: 900; letter-spacing: 1px; background: #232a52; border: 2px solid #323b6b; border-radius: 10px; font-size: 14px; }
+#howto-reopen { width: 100%; padding: 6px; font-weight: 900; letter-spacing: 1px; background: none; border: 1px dashed #323b6b; border-radius: 10px; color: #9fb0e8; font-size: 13px; }
+#howto-reopen[hidden], #howto-full[hidden] { display: none; }
+#pref-row { display: flex; flex-direction: column; gap: 6px; align-items: center; width: min(92vw, 420px); }
+#hand-toggle { display: flex; gap: 0; border: 2px solid #2a3050; border-radius: 999px; overflow: hidden; }
+#hand-toggle button { background: transparent; padding: 6px 14px; font-size: 11px; font-weight: 900; letter-spacing: 1px; color: #8892b0; border-radius: 0; }
+#hand-toggle button.sel { background: #232a52; color: #fdd835; }
+#pref-toggles { display: flex; gap: 8px; }
+#pref-toggles button { background: rgba(255,255,255,.06); border: 1px solid #2a3050; border-radius: 999px; padding: 5px 12px; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #8892b0; }
+#pref-toggles button[aria-pressed="true"] { color: #69f0ae; border-color: #2e7d32; }
+#pref-toggles button[aria-pressed="false"] { color: #8892b0; }
+
+/* ---- handedness: swap steer/pedal columns (order, so computed style is assertable) ---- */
+.pad .side.left { order: 1; } .pad .side.mid { order: 2; } .pad .side.right { order: 3; }
+.pad.lefty .side.left { order: 3; } .pad.lefty .side.right { order: 1; }
+@media (orientation: portrait) {
+  .pad.lefty .side.left { order: 2; } .pad.lefty .side.right { order: 1; } .pad.lefty .side.mid { order: 3; }
+}
+
+/* ---- FINAL LAP gold flash on the shared event chip ---- */
+#event-chip.final { border-color: #ffd700; color: #ffd700; box-shadow: 0 0 22px rgba(255,215,0,.7); }

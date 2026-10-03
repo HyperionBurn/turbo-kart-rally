@@ -112,7 +112,8 @@ test('six controllers join, ready, race together and the results award points', 
   await expect(host.locator('.event-ui')).toHaveAttribute('data-screen', 'results', { timeout: 30000 });
 
   const places = await host.evaluate(() => [...document.querySelectorAll('.res-row .res-place')].map(e => e.textContent.trim()));
-  expect(places).toEqual(['1st', '2nd', '3rd', '4th', '5th', '6th']);
+  expect(places.map((p) => p.replace(/^[^\dA-Za-z]+/, ''))).toEqual(['1st', '2nd', '3rd', '4th', '5th', '6th']);
+  expect(places[0]).toContain('🥇'); expect(places[1]).toContain('🥈'); expect(places[2]).toContain('🥉');
   const points = await host.evaluate(() => [...document.querySelectorAll('.res-row .res-pts')].map(e => e.textContent.trim()));
   expect(points).toEqual(['+10', '+8', '+6', '+4', '+2', '+1']);
 

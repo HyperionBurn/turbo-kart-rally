@@ -102,13 +102,16 @@ export class EventUI {
 
   _renderSettings() {
     const s = (this.session && this.session.settings) || {};
+    const pts = (this.session && this.session.pointsTable) || [10, 8, 6, 4, 2, 1];
+    const ccLabel = { easy: '50cc · EASY', normal: '100cc · NORMAL', hard: '150cc · HARD' };
+    const ords = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
     this.el.innerHTML = `
       <div class="ev-settings">
         <h2>RACE SETTINGS</h2>
         <div class="opt-row"><span>Laps</span><div>${[1, 3, 5].map((n) => `<button data-k="laps" data-v="${n}" class="${s.laps === n ? 'on' : ''}">${n}</button>`).join('')}</div></div>
         <div class="opt-desc">How many laps each race lasts.</div>
-        <div class="opt-row"><span>Difficulty</span><div>${['easy', 'normal', 'hard'].map((n) => `<button data-k="difficulty" data-v="${n}" class="${s.difficulty === n ? 'on' : ''}">${n.toUpperCase()}</button>`).join('')}</div></div>
-        <div class="opt-desc">How fast and aggressive the computer drivers are.</div>
+        <div class="opt-row"><span>Difficulty</span><div>${['easy', 'normal', 'hard'].map((n) => `<button data-k="difficulty" data-v="${n}" class="${s.difficulty === n ? 'on' : ''}">${ccLabel[n]}</button>`).join('')}</div></div>
+        <div class="opt-desc">Speed class: sets top speed + AI pace — 50cc relaxed, 100cc brisk, 150cc flat-out.</div>
         <div class="opt-row"><span>Items</span><div>${[true, false].map((n) => `<button data-k="items" data-v="${n}" class="${!!s.items === n ? 'on' : ''}">${n ? 'ON' : 'OFF'}</button>`).join('')}</div></div>
         <div class="opt-desc">Pickups like shells and boosts appear on the track when ON.</div>
         <div class="opt-row"><span>AI Fill</span><div>${[0, 2].map((n) => `<button data-k="aiFill" data-v="${n}" class="${s.aiFill === n ? 'on' : ''}">${n}</button>`).join('')}</div></div>
@@ -121,6 +124,7 @@ export class EventUI {
         <div class="opt-desc">BLOCK keeps every racer unique; ALLOW lets teams pick the same one.</div>
         <div class="opt-row"><span>Races</span><div>${[1, 2, 3, 4, 5].map((n) => `<button data-k="raceCount" data-v="${n}" class="${(s.raceCount ?? 3) === n ? 'on' : ''}">${n}</button>`).join('')}</div></div>
         <div class="opt-desc">How many races make up the championship.</div>
+        <div class="opt-desc">POINTS ${pts.map((p, i) => `${ords[i] || ((i + 1) + 'th')} ${p}`).join(' · ')}</div>
         <button id="ev-go" class="btn primary big">START RACE</button>
         <button id="ev-back" class="btn ghost">← LOBBY</button>
       </div>`;
@@ -154,12 +158,13 @@ export class EventUI {
     const s = this.session;
     const gained = (s && s.lastGained) || {};
     const results = (s && s.lastResults) || [];
+    const medal = (p) => p === 1 ? '🥇 ' : p === 2 ? '🥈 ' : p === 3 ? '🥉 ' : '';
     this.el.innerHTML = `
       <div class="ev-results">
         <h2>RACE RESULTS</h2>
         ${results.map((r) => `
-          <div class="res-row" style="--tc:${r.color || '#888'}">
-            <span class="res-place">${ord(r.place)}</span>
+          <div class="res-row" style="--tc:${r.color || '#888'}${r.place === 1 ? ';border-left:4px solid #ffd835;padding-left:8px' : ''}">
+            <span class="res-place">${medal(r.place)}${ord(r.place)}</span>
             <span class="res-name">${r.name}</span>
             <span class="res-char">${r.characterName || ''}</span>
             <span class="res-time">${r.time || ''}</span>
@@ -168,6 +173,17 @@ export class EventUI {
         <button id="ev-next" class="btn primary big">LEADERBOARD</button>
       </div>`;
     this.el.querySelector('#ev-next').onclick = () => this.h.showLeaderboard();
+    // staggered row reveal (~250ms apart, JS timeouts); LEADERBOARD stays visible throughout
+    try {
+      const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!reduced) {
+        const rows = this.el.querySelectorAll('.res-row');
+        rows.forEach((row, i) => {
+          row.style.display = 'none';
+          setTimeout(() => { row.style.display = ''; }, 250 * (i + 1));
+        });
+      }
+    } catch {}
   }
 
   _renderLeaderboard() {
@@ -176,6 +192,12 @@ export class EventUI {
     const races = s.raceCount || (s.settings && s.settings.raceCount) || 3;
     const done = (s.raceIndex || 0) >= races;
     const champ = done && scores[0] ? scores[0] : null;
+    // largest mover since last race: max (total - previous); ties → first in display order
+    let climbIdx = 0, climbBest = -Infinity;
+    scores.forEach((r, i) => {
+      const g = (r.total || 0) - (r.previous || 0);
+      if (g > climbBest) { climbBest = g; climbIdx = i; }
+    });
     this.el.innerHTML = `
       <div class="ev-board ${done ? 'final' : ''}">
         ${champ ? `<div class="champ-banner"><div class="champ-kicker">EVENT CHAMPION</div>
@@ -185,7 +207,7 @@ export class EventUI {
         <table>
           <thead><tr><th>#</th><th>TEAM</th><th>RACER</th><th>LAST</th><th>+PTS</th><th>TOTAL</th><th>WINS</th></tr></thead>
           <tbody>
-            ${scores.map((r, i) => `<tr><td>${i + 1}</td><td>${r.name}</td><td>${CHARACTERS[r.characterId] ? CHARACTERS[r.characterId].name : ''}</td><td>${r.previous}</td><td>+${(r.total - r.previous)}</td><td class="tot" data-total="${r.total}">0</td><td>${r.wins}</td></tr>`).join('')}
+            ${scores.map((r, i) => `<tr><td>${i + 1}</td><td>${r.name}${i === climbIdx ? '<span style="color:#ffd835;font-size:11px"> ▲ BIGGEST CLIMB</span>' : ''}</td><td>${CHARACTERS[r.characterId] ? CHARACTERS[r.characterId].name : ''}</td><td>${r.previous}</td><td>+${(r.total - r.previous)}</td><td class="tot" data-total="${r.total}">0</td><td>${r.wins}</td></tr>`).join('')}
           </tbody>
         </table>
         <button id="ev-again" class="btn primary big">NEXT RACE</button>

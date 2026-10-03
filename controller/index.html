@@ -39,6 +39,28 @@
       <div id="net-pill" title="Tap for details"><span id="conn-dot2" aria-hidden="true"></span><span id="ping">--</span>&nbsp;ms&nbsp;·&nbsp;<span id="ping-quality">…</span></div>
     </header>
     <div id="net-detail" hidden></div>
+    <div id="howto-card">
+      <div id="howto-full">
+        <div class="howto-title">HOW TO PLAY</div>
+        <div class="howto-rows">
+          <div class="howto-row"><span class="howto-key gas">GAS</span><span class="howto-desc">Hold to drive</span></div>
+          <div class="howto-row"><span class="howto-key drift">DRIFT</span><span class="howto-desc">Hold in corners, release for boost</span></div>
+          <div class="howto-row"><span class="howto-key item">ITEM</span><span class="howto-desc">Tap when lit</span></div>
+        </div>
+        <button id="howto-gotit" type="button">Got it</button>
+      </div>
+      <button id="howto-reopen" type="button" aria-label="Show how to play" hidden>? HOW TO PLAY</button>
+    </div>
+    <div id="pref-row">
+      <div id="hand-toggle" role="group" aria-label="Steering hand">
+        <button id="hand-left" type="button" aria-pressed="false">LEFT-HAND</button>
+        <button id="hand-right" type="button" aria-pressed="true">RIGHT-HAND</button>
+      </div>
+      <div id="pref-toggles">
+        <button id="haptics-toggle" type="button" aria-pressed="true">HAPTICS ON</button>
+        <button id="sound-toggle" type="button" aria-pressed="true">SOUND ON</button>
+      </div>
+    </div>
     <div id="char-grid" role="listbox" aria-label="Choose your racer"></div>
     <button id="ready-btn" type="button" class="big primary" aria-pressed="false">READY</button>
     <p class="hint" id="lobby-hint">Pick your racer, press READY. Host starts the race.</p>

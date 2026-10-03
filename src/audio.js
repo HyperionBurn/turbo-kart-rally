@@ -55,6 +55,7 @@ export class AudioEngine {
     this._pendingSong = null;
     this._rouletteTimer = 0;
     this._rouletteActive = false;
+    this._lastLeaderSting = 0;
     this._offs = [];
 
     this._onGesture = () => this.unlock();
@@ -164,7 +165,12 @@ export class AudioEngine {
     on('ev:points', (d) => { this.beep(880 + (d_place(d) || 0) * 40, 0.1, 'triangle', 0.16); });
     on('ev:reveal', () => this.finalLapJingle());
     on('race:end', () => this.drumroll());
-    on('race:leader', () => { this.beep(1046, 0.09, 'triangle', 0.12); this.beep(1318, 0.14, 'triangle', 0.1); });
+    on('race:leader', () => {
+      const now = Date.now();
+      if (now - (this._lastLeaderSting || 0) < 3000) return;
+      this._lastLeaderSting = now;
+      this.beep(1046, 0.09, 'triangle', 0.12); this.beep(1318, 0.14, 'triangle', 0.1);
+    });
     on('ev:champion', () => { this.fanfare(1); this.whoosh(0.8, 1.2); });
   }
 

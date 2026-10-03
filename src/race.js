@@ -34,6 +34,8 @@ export class RaceManager {
     this._rightTimer = 0;
     this._cdIndex = 0;
     this._finishCount = 0;
+    this._leader = null;
+    this._finalLapEmitted = false;
     for (const k of karts) this._initKart(k);
   }
 
@@ -144,7 +146,14 @@ export class RaceManager {
           if (k._lapCount > this.laps) { this._finish(k); return; }
           k.lap = k._lapCount;
           this._emit('race:lap', { kart: k, lap: k.lap, lapTime });
-          if (k === this.player && k.lap === this.laps && this.laps > 1) this._emit('race:finalLap', {});
+          if (k.lap === this.laps && this.laps > 1) {
+            if (k === this.player) this._emit('race:finalLap', {});
+            // event mode has no single player kart: announce the first kart onto its final lap once
+            else if (!this.player && !this._finalLapEmitted) {
+              this._finalLapEmitted = true;
+              this._emit('race:finalLap', { kart: k });
+            }
+          }
         }
       }
     } else if (d > 0.5) {

@@ -11,7 +11,8 @@ const state = {
   name: localStorage.getItem('tkr-name') || '', flow: 'lobby', ready: false,
   charIdx: 0, color: '#e53935', battery: null, suspended: false,
   pointsTable: [10, 8, 6, 4, 2, 1], raceIndex: 0, lastPlace: 0, lastLap: 1, itemHeld: null,
-  totalLaps: null, itemJustUsed: null, itemUsedAt: 0, lowBattWarned: false,
+  totalLaps: null, totalRaces: null, finalLapShown: false,
+  itemJustUsed: null, itemUsedAt: 0, lowBattWarned: false,
 };
 const log = new LinkStats();
 const clock = new ClockSync();
@@ -133,6 +134,8 @@ function onMessage(m) {
       if (Array.isArray(st.pointsTable)) state.pointsTable = st.pointsTable;
       if (typeof st.raceIndex === 'number') state.raceIndex = st.raceIndex;
       if (st.settings && typeof st.settings.laps === 'number') state.totalLaps = st.settings.laps;
+      if (typeof st.laps === 'number' && st.laps > 0) state.totalLaps = st.laps;
+      if (typeof st.totalRaces === 'number') state.totalRaces = st.totalRaces;
       const teams = Array.isArray(st.teams) ? st.teams : [];
       const me = teams.find((t) => t && t.id === state.teamId);
       const readyCount = teams.filter((t) => t && t.connected && t.ready).length;
@@ -164,6 +167,8 @@ function onMessage(m) {
         if (Array.isArray(m.state.pointsTable)) state.pointsTable = m.state.pointsTable;
         if (typeof m.state.raceIndex === 'number') state.raceIndex = m.state.raceIndex;
         if (m.state.settings && typeof m.state.settings.laps === 'number') state.totalLaps = m.state.settings.laps;
+        if (typeof m.state.laps === 'number' && m.state.laps > 0) state.totalLaps = m.state.laps;
+        if (typeof m.state.totalRaces === 'number') state.totalRaces = m.state.totalRaces;
         if (m.state.settings && typeof m.state.settings.raceSpeed !== 'undefined') state.raceSpeed = m.state.settings.raceSpeed;
       }
       break;
@@ -197,8 +202,17 @@ function onMessage(m) {
           state.itemJustUsed = null;
         }
         setItemHeld(item);
+        // FINAL LAP: only when the host told us laps (state.totalLaps>1) and this
+        // row is on the last lap. Once per race; never guess when laps unknown.
+        const lapsKnown = (+state.totalLaps || 0) > 1;
+        const isFinal = lapsKnown && lap === (+state.totalLaps) && lap > 1;
+        if (isFinal && !state.finalLapShown) {
+          state.finalLapShown = true;
+          flashEvent('FINAL LAP!', 'lap final');
+          buzz([0, 60, 40, 60, 40, 120]); beep(660, 0.1); setTimeout(() => beep(990, 0.14), 110);
+        }
         // Lap flash wins the shared chip slot; otherwise show overtake / loss.
-        if (lapMsg) { flashEvent(lapMsg, 'lap'); buzz([0, 60, 40, 60, 40, 120]); beep(660, 0.1); setTimeout(() => beep(990, 0.14), 110); }
+        else if (lapMsg) { flashEvent(lapMsg, 'lap'); buzz([0, 60, 40, 60, 40, 120]); beep(660, 0.1); setTimeout(() => beep(990, 0.14), 110); }
         else if (dir === 'up' && place) { flashEvent(`P${place} ▲`, 'up'); buzz([0, 40, 40, 80]); beep(880, 0.09); setTimeout(() => beep(1174, 0.12), 90); }
         else if (dir === 'down' && place) { flashEvent(`P${place} ▼`, 'down'); buzz(120); beep(220, 0.18, 'sawtooth', 0.05); }
       } else $('race-pos').textContent = '';
@@ -254,6 +268,8 @@ function onFlowChange(from, to) {
   clearTimeout(cdTimer);
   const chip = $('event-chip');
   if (chip) { clearTimeout(eventTimer); chip.className = ''; chip.hidden = true; }
+  if (to === 'countdown' || to === 'prerace') state.finalLapShown = false;
+  if (from === 'racing' && to !== 'racing') state.finalLapShown = false;
   if (to === 'countdown' || to === 'prerace' || to === 'racing') {
     // Fresh race: first sightings of place/lap must stay silent, and any stale
     // held-item display is dropped (standings will re-assert it).
@@ -362,7 +378,10 @@ function itemLabel(id) {
 
 /** Tiny procedural beeper (countdown ticks, item pickup). Unlocked on first tap. */
 let actx = null;
+function hapticsOn() { try { return localStorage.getItem('tkr-haptics') !== '0'; } catch { return true; } }
+function soundOn() { try { return localStorage.getItem('tkr-sound') !== '0'; } catch { return true; } }
 function beep(freq = 660, dur = 0.1, type = 'square', vol = 0.06) {
+  if (!soundOn()) return;
   try {
     if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
     if (actx.state === 'suspended') actx.resume();
@@ -530,7 +549,7 @@ document.addEventListener('gesturestart', (e) => e.preventDefault());
 document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
 document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
-function buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch {} }
+function buzz(ms) { try { if (!hapticsOn()) return; navigator.vibrate && navigator.vibrate(ms); } catch {} }
 $('pause-btn').addEventListener('click', (e) => {
   e.preventDefault();
   pauseEdge = true;
@@ -550,6 +569,66 @@ function hex(c) { return '#' + (c >>> 0).toString(16).padStart(6, '0').slice(-6)
 
 $('end-body').textContent = 'Race complete — check the projector for the leaderboard!';
 
+// ---------------- first-time onboarding + preferences (lobby, in-flow) ----------------
+function applyHand() {
+  let hand = 'right';
+  try { hand = localStorage.getItem('tkr-hand') || 'right'; } catch {}
+  if (hand !== 'left') hand = 'right';
+  const pad = document.querySelector('.pad');
+  if (pad) pad.classList.toggle('lefty', hand === 'left');
+  const l = $('hand-left'), r = $('hand-right');
+  if (l && r) {
+    l.classList.toggle('sel', hand === 'left');
+    r.classList.toggle('sel', hand === 'right');
+    l.setAttribute('aria-pressed', hand === 'left' ? 'true' : 'false');
+    r.setAttribute('aria-pressed', hand === 'right' ? 'true' : 'false');
+  }
+  return hand;
+}
+function applyPrefToggles() {
+  const h = $('haptics-toggle'), s = $('sound-toggle');
+  const hon = hapticsOn(), son = soundOn();
+  if (h) { h.setAttribute('aria-pressed', hon ? 'true' : 'false'); h.textContent = hon ? 'HAPTICS ON' : 'HAPTICS OFF'; }
+  if (s) { s.setAttribute('aria-pressed', son ? 'true' : 'false'); s.textContent = son ? 'SOUND ON' : 'SOUND OFF'; }
+}
+function applyHowto() {
+  let dismissed = false;
+  try { dismissed = localStorage.getItem('tkr-howto') === '1'; } catch {}
+  const full = $('howto-full'), reopen = $('howto-reopen');
+  if (full && reopen) {
+    full.hidden = dismissed;
+    reopen.hidden = !dismissed;
+  }
+}
+(function initPrefs() {
+  applyHand(); applyPrefToggles(); applyHowto();
+  const hl = $('hand-left'), hr = $('hand-right');
+  if (hl) hl.addEventListener('click', (e) => { e.preventDefault(); try { localStorage.setItem('tkr-hand', 'left'); } catch {} applyHand(); buzz(10); });
+  if (hr) hr.addEventListener('click', (e) => { e.preventDefault(); try { localStorage.setItem('tkr-hand', 'right'); } catch {} applyHand(); buzz(10); });
+  const h = $('haptics-toggle'), s = $('sound-toggle');
+  if (h) h.addEventListener('click', (e) => {
+    e.preventDefault();
+    try { localStorage.setItem('tkr-haptics', hapticsOn() ? '0' : '1'); } catch {}
+    applyPrefToggles(); buzz(20);
+  });
+  if (s) s.addEventListener('click', (e) => {
+    e.preventDefault();
+    try { localStorage.setItem('tkr-sound', soundOn() ? '0' : '1'); } catch {}
+    applyPrefToggles(); beep(660, 0.08);
+  });
+  const gotit = $('howto-gotit'), reopen = $('howto-reopen');
+  if (gotit) gotit.addEventListener('click', (e) => {
+    e.preventDefault();
+    try { localStorage.setItem('tkr-howto', '1'); } catch {}
+    applyHowto(); buzz(10);
+  });
+  if (reopen) reopen.addEventListener('click', (e) => {
+    e.preventDefault();
+    try { localStorage.removeItem('tkr-howto'); } catch {}
+    applyHowto(); buzz(10);
+  });
+})();
+
 // Light-verification hook: lets a single test page dispatch synthetic inbound
 // messages and call the pure helpers without touching the network.
-window.__tkr = { state, onMessage, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, setItemHeld, maybeBattWarn };
+window.__tkr = { state, onMessage, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, setItemHeld, maybeBattWarn, buzz, beep, hapticsOn, soundOn, applyHand, applyHowto, applyPrefToggles, onFlowChange };
