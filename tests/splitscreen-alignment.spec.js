@@ -24,20 +24,17 @@ async function startRace(page) {
   await page.waitForTimeout(1200);
 }
 
-/** Ask the page to draw one frame while each viewport is still set, then read it back. */
+/** Viewports the last REAL frame applied — read back out of three.js inside render(). */
 async function realViewports(page) {
   return page.evaluate(() => {
-    const THREE = window.__game.THREE;
     const el = document.querySelector('#game-canvas');
     const canvas = el.getBoundingClientRect();
     const panels = [...document.querySelectorAll('.sp-panel')];
-    // readViewport() re-renders each viewport and reads it back out of three.js, which is the
-    // authoritative value (not our own arithmetic).
-    const gl = window.__game.readViewport();
+    const dbg = window.__game.viewportDebug();
     return {
       canvas: { w: Math.round(canvas.width), h: Math.round(canvas.height) },
-      mapping: gl.mapping,
-      gl: gl.viewports,          // [{x,y,w,h}] in CSS pixels, origin top-left
+      mapping: dbg ? dbg.mapping : null,
+      gl: (dbg && dbg.viewports) || [],
       panels: panels.map((p) => {
         const b = p.getBoundingClientRect();
         return {
@@ -68,7 +65,11 @@ test('GL viewports line up with the HUD panels at 16:9', async ({ browser }) => 
   await page.close();
 });
 
-for (const [w, h, dpr] of [[1024, 768, 1], [1440, 900, 1], [1920, 1080, 1], [2560, 1080, 1], [900, 1600, 1], [1440, 900, 2]]) {
+// NOTE: viewport sizes are kept modest on purpose. 16:9 is already covered by 1280x720,
+// and the software rasterizer (SwiftShader) OOM-crashes Chromium on 1920x1080+ with six
+// viewports (Target crashed / worker exit 3221226091). Aspect coverage is preserved with
+// smaller buffers: 1600x900 is still 16:9, 1680x720 is still ~21:9 ultrawide.
+for (const [w, h, dpr] of [[1024, 768, 1], [1440, 900, 1], [1600, 900, 1], [1680, 720, 1], [900, 1600, 1], [1440, 900, 2]]) {
   test(`GL viewports line up at ${w}x${h} dpr${dpr}`, async ({ browser }) => {
     const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: dpr });
     await page.goto(HOST + '/', { waitUntil: 'load' });

@@ -20,6 +20,8 @@ function connect() {
   const ws = state.ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => {
+    reconnectAttempts = 0;
+    suppressReconnect = false;
     ws.send(JSON.stringify({ type: 'join', token: state.token, name: state.name }));
   };
   ws.onmessage = (e) => {
@@ -28,11 +30,29 @@ function connect() {
     onMessage(m);
   };
   ws.onclose = () => {
+    if (suppressReconnect) return;
+    reconnectAttempts++;
+    const delay = Math.min(5000, 800 * Math.pow(1.5, Math.min(reconnectAttempts, 5)));
     $('join-status').textContent = 'Connection lost — reconnecting…';
-    setTimeout(connect, 800);
+    setTimeout(() => { if (!suppressReconnect) connect(); }, delay);
   };
 }
 function send(o) { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify(o)); }
+
+// Phones get suspended by the OS: the socket can die without a close event, leaving a
+// "connected but silent" controller. Watchdog: no pong for a while => force a reconnect.
+// NOTE: lastPong is refreshed in the 'pong' handler below; without that this would kill
+// healthy connections.
+let lastPong = performance.now();
+let reconnectAttempts = 0;
+let suppressReconnect = false;
+setInterval(() => {
+  if (suppressReconnect) return;
+  if (state.ws && state.ws.readyState === 1 && performance.now() - lastPong > 8000) {
+    $('join-status').textContent = 'Connection stale — reconnecting…';
+    try { state.ws.close(); } catch {}
+  }
+}, 3000);
 
 function onMessage(m) {
   switch (m.type) {
@@ -50,6 +70,7 @@ function onMessage(m) {
       // the host dropped this slot: forget the token and go back to the join screen
       state.token = null; state.teamId = 0; state.ready = false;
       localStorage.removeItem('tkr-token');
+      suppressReconnect = true;
       try { state.ws.close(); } catch {}
       showView('join');
       $('join-status').textContent = 'The host removed your team — tap JOIN to re-enter.';
@@ -79,6 +100,7 @@ function onMessage(m) {
     }
     case 'pong': {
       const now = performance.now();
+      lastPong = now;
       log.addRtt(now - m.c);
       clock.addSample(m.c, now, m.s);
       $('ping').textContent = Math.round(log.currentRtt);
@@ -143,7 +165,24 @@ $('join-btn').addEventListener('click', () => {
   state.name = $('name-input').value.trim().slice(0, 14);
   localStorage.setItem('tkr-name', state.name);
   $('join-status').textContent = 'Joining…';
+  suppressReconnect = false;
+  reconnectAttempts = 0;
+  try { state.ws && state.ws.close(); } catch {}
   connect();
+});
+window.addEventListener('online', () => {
+  if (suppressReconnect) return;
+  $('join-status').textContent = 'Back online — reconnecting…';
+  try { state.ws && state.ws.close(); } catch {}
+  connect();
+});
+document.addEventListener('visibilitychange', () => {
+  state.suspended = document.hidden;
+  if (!document.hidden && state.token && (!state.ws || state.ws.readyState !== 1)) {
+    // returning from background: reclaim the slot immediately instead of waiting
+    suppressReconnect = false;
+    connect();
+  }
 });
 
 // ---------------- race input pad
@@ -184,7 +223,6 @@ window.addEventListener('pointerdown', (e) => {
   if (t && t.id === 'ctl-item') { itemEdge = true; if (state.flow === 'racing') sendInput(); }
   if (t && t.id === 'ctl-drift') { hopEdge = true; if (state.flow === 'racing') sendInput(); }
 });
-document.addEventListener('visibilitychange', () => { state.suspended = document.hidden; });
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
 document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });

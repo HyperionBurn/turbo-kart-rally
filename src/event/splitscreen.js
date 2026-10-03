@@ -19,6 +19,7 @@ const LAYOUTS = {
 // "canvas CSS size vs drawing buffer size" mismatch that produces partial frames.
 export const SCALE_TIERS = [1, 0.85, 0.75, 0.65, 0.55, 0.45];
 const _size = new THREE.Vector2();
+const _vp = new THREE.Vector4();
 
 export class SplitScreen {
   constructor(renderer, ChaseCameraClass) {
@@ -96,7 +97,13 @@ export class SplitScreen {
       r.setScissor(vx, vy, vw, vh);
       if (i === 0) r.clear();
       r.render(scene, c.camera);
-      this.lastViewports.push({ x: vx, y: vyTop, w: vw, h: vh });
+      // read the viewport back out of three.js so diagnostics/tests see the real GL state,
+      // not the numbers we intended
+      r.getViewport(_vp);
+      this.lastViewports.push({
+        x: Math.round(_vp.x), w: Math.round(_vp.z),
+        y: Math.round(cssH - (_vp.y + _vp.w)), h: Math.round(_vp.w),
+      });
     }
     r.setScissorTest(false);
   }
