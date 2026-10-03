@@ -119,6 +119,8 @@ header { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 34px); le
 .drift.on, .drift:active { background: #1e88e5; color: #fff; }
 .item { background: #3a2a10; border-color: #fdd835; color: #fdd835; flex: 1.6; }
 .item.on, .item:active { background: #fdd835; color: #111; }
+.item.has-item { animation: itemPulse 1s ease-in-out infinite; border-color: #fff; }
+@keyframes itemPulse { 50% { box-shadow: 0 0 18px rgba(253,216,53,.8); } }
 .look { font-size: 15px; }
 
 /* portrait fallback: stacked rows instead of side columns */

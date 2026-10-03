@@ -93,7 +93,7 @@ function netInfo() {
   return { port: activePort, ips, controllerUrl: ips.length ? `http://${ips[0]}:${activePort}/controller` : null };
 }
 function broadcastLobby() {
-  const state = { type: 'lobby', state: { teams: teams.map(publicTeam), flow: session.flow } };
+  const state = { type: 'lobby', state: { teams: teams.map(publicTeam), flow: session.flow, pointsTable: session.pointsTable, raceIndex: session.raceIndex } };
   for (const c of allClients()) send(c, state);
   send(hostWs, { type: 'session', state: session });
 }
@@ -120,7 +120,7 @@ setInterval(() => {
 // broadcast is missed (tab throttling, a reconnect race, or a dropped frame).
 setInterval(() => {
   if (hostWs && hostWs.readyState === 1) {
-    send(hostWs, { type: 'lobby', state: { teams: teams.map(publicTeam), flow: session.flow } });
+    send(hostWs, { type: 'lobby', state: { teams: teams.map(publicTeam), flow: session.flow, pointsTable: session.pointsTable, raceIndex: session.raceIndex } });
   }
 }, 1000);
 
@@ -197,6 +197,11 @@ function handleJson(ws, m) {
     case 'hostPoints': session.pointsTable = m.pointsTable || session.pointsTable; persist(); pushSession(); break;
     case 'hostStandings': {
       for (const t of teams) if (t.ws) send(t.ws, { type: 'standings', rows: m.rows });
+      break;
+    }
+    case 'hostCountdown': {
+      const n = m.n;
+      for (const t of teams) if (t.ws) send(t.ws, { type: 'countdown', n });
       break;
     }
     case 'hostApplyResults': applyResults(m.results); break;

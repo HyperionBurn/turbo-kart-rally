@@ -289,7 +289,7 @@ const netOffsets = new Map();      // teamId -> client clock offset vs server (r
 setInterval(() => {
   const w = world;
   if (mode !== 'event' || !w || w.mode !== 'event' || !netClient || state !== 'racing') return;
-  const rows = w.karts.filter((k) => k.teamId > 0).map((k) => ({ teamId: k.teamId, place: k.place, lap: Math.min(k.lap || 1, w.race.laps) })).sort((a, b) => a.place - b.place);
+  const rows = w.karts.filter((k) => k.teamId > 0).map((k) => ({ teamId: k.teamId, place: k.place, lap: Math.min(k.lap || 1, w.race.laps), item: k.item || null })).sort((a, b) => a.place - b.place);
   netClient.send({ type: 'hostStandings', rows });
 }, 500);
 
@@ -609,7 +609,10 @@ bus.on('race:go', () => {
   }
 });
 bus.on('race:countdown', ({ n }) => {
-  if (mode === 'event' && world && world.mode === 'event') { flashEventBanner(String(n)); startLights.set(6 - n); }
+  if (mode === 'event' && world && world.mode === 'event') {
+    flashEventBanner(String(n)); startLights.set(6 - n);
+    if (netClient) netClient.send({ type: 'hostCountdown', n });
+  }
 });
 bus.on('race:end', (d) => {
   if (!world || world.mode !== 'event') return;

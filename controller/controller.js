@@ -10,6 +10,7 @@ const state = {
   ws: null, token: localStorage.getItem('tkr-token') || null, teamId: 0, sessionId: 0,
   name: localStorage.getItem('tkr-name') || '', flow: 'lobby', ready: false,
   charIdx: 0, color: '#e53935', battery: null, suspended: false,
+  pointsTable: [10, 8, 6, 4, 2, 1], raceIndex: 0, lastPlace: 0, lastLap: 1, itemHeld: null,
 };
 const log = new LinkStats();
 const clock = new ClockSync();
@@ -127,7 +128,11 @@ function onMessage(m) {
       const prevFlow = state.flow;
       state.flow = m.state.flow;
       if (prevFlow !== state.flow) onFlowChange(prevFlow, state.flow);
+      if (Array.isArray(m.state.pointsTable)) state.pointsTable = m.state.pointsTable;
+      if (typeof m.state.raceIndex === 'number') state.raceIndex = m.state.raceIndex;
       const me = m.state.teams.find((t) => t.id === state.teamId);
+      const readyCount = m.state.teams.filter((t) => t.connected && t.ready).length;
+      const connectedCount = m.state.teams.filter((t) => t.connected).length;
       if (me) {
         state.charIdx = me.characterIdx;
         state.ready = me.ready;
@@ -139,10 +144,30 @@ function onMessage(m) {
         $('ready-btn').classList.toggle('ready', state.ready);
         $('ready-btn').setAttribute('aria-pressed', state.ready ? 'true' : 'false');
         if (state.ws && state.ws.readyState === 1) setConn('connected', `Connected · ${me.name}`);
+        // lobby hint teaches the room state: how many are ready, whose move it is
+        $('lobby-hint').textContent = state.ready
+          ? (readyCount >= connectedCount && connectedCount > 0 ? 'You’re READY — waiting for the host to start.' : `You’re READY — ${readyCount}/${Math.max(connectedCount, 1)} ready. Nudge your friends!`)
+          : (connectedCount <= 1 ? 'Pick your racer, press READY. Host starts the race.' : `${readyCount}/${connectedCount} ready — pick your racer and tap READY.`);
       }
       if (m.state.flow === 'prerace' || m.state.flow === 'racing' || m.state.flow === 'countdown') showView('race');
       else if (m.state.flow === 'results' || m.state.flow === 'leaderboard') { renderEnd(); showView('end'); }
       else showView('lobby');
+      break;
+    }
+    case 'session': {
+      // points table + race index so the results card matches the host's rules
+      if (m.state) {
+        if (Array.isArray(m.state.pointsTable)) state.pointsTable = m.state.pointsTable;
+        if (typeof m.state.raceIndex === 'number') state.raceIndex = m.state.raceIndex;
+        if (m.state.settings && typeof m.state.settings.raceSpeed !== 'undefined') state.raceSpeed = m.state.settings.raceSpeed;
+      }
+      break;
+    }
+    case 'countdown': {
+      // live numbers from the host (3-2-1), not just a static "…" overlay
+      const n = m.n;
+      if (n === 'GO' || n === 0) { flashCountdown('GO!', true); buzz([0, 80, 40, 80, 40, 120]); }
+      else if (typeof n === 'number' && n > 0) { flashCountdown(String(n)); beep(440 + (3 - Math.min(n, 3)) * 110, 0.12); buzz(30); }
       break;
     }
     case 'standings': {
@@ -150,6 +175,7 @@ function onMessage(m) {
       if (me) {
         state.lastPlace = me.place; state.lastLap = me.lap;
         $('race-pos').textContent = `${['1st','2nd','3rd','4th','5th','6th'][me.place - 1] || ''} · L${me.lap}`;
+        setItemHeld(me.item || null);
       } else $('race-pos').textContent = '';
       break;
     }
@@ -230,11 +256,47 @@ function flashCountdown(text, go) {
 
 /** Personal result card: your place and points, not just "check the projector". */
 function renderEnd() {
-  const pts = [10, 8, 6, 4, 2, 1];
+  const pts = state.pointsTable || [10, 8, 6, 4, 2, 1];
   const p = state.lastPlace || 0;
   $('end-place').textContent = p ? ['1st','2nd','3rd','4th','5th','6th'][p - 1] : '—';
   $('end-detail').textContent = p ? `${state.name || ('Team ' + state.teamId)} · +${pts[p - 1] ?? 0} pts` : '';
 }
+
+/** ITEM button mirrors what you're holding (the host tells us each 500 ms). */
+function setItemHeld(item) {
+  if (item === state.itemHeld) return;
+  const had = state.itemHeld;
+  state.itemHeld = item;
+  const el = $('ctl-item');
+  el.classList.toggle('has-item', !!item);
+  el.textContent = item ? `ITEM: ${itemLabel(item)}` : 'ITEM';
+  if (item && !had) { buzz([0, 40, 40, 60]); beep(880, 0.09); setTimeout(() => beep(1174, 0.12), 90); }
+}
+function itemLabel(id) {
+  return ({ mushroom: '🍄', triple_mushroom: '🍄×3', banana: '🍌', green_shell: '🟢', red_shell: '🔴', star: '⭐', lightning: '⚡', blue_shell: '🔵' })[id] || '●';
+}
+
+/** Tiny procedural beeper (countdown ticks, item pickup). Unlocked on first tap. */
+let actx = null;
+function beep(freq = 660, dur = 0.1, type = 'square', vol = 0.06) {
+  try {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const t = actx.currentTime;
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(actx.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  } catch {}
+}
+['pointerdown', 'keydown'].forEach((ev) => window.addEventListener(ev, function unlock() {
+  try {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+  } catch {}
+}, { once: false, passive: true }));
 
 // ping + stats reporting
 setInterval(() => send({ type: 'ping', c: performance.now() }), 1000);
