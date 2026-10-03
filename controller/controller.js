@@ -17,6 +17,8 @@ let seq = 0;
 
 // ---------------- networking
 function connect() {
+  setConn('connecting', 'Connecting…');
+  $('join-btn').disabled = true;
   const ws = state.ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => {
@@ -33,11 +35,46 @@ function connect() {
     if (suppressReconnect) return;
     reconnectAttempts++;
     const delay = Math.min(5000, 800 * Math.pow(1.5, Math.min(reconnectAttempts, 5)));
-    $('join-status').textContent = 'Connection lost — reconnecting…';
+    setConn('reconnecting', `Connection lost — retrying (${reconnectAttempts})…`, 'warn');
+    $('join-btn').disabled = false;
     setTimeout(() => { if (!suppressReconnect) connect(); }, delay);
+  };
+  ws.onerror = () => {
+    setConn('offline', 'Network error — check Wi-Fi, then RETRY.', 'err');
+    try { ws.close(); } catch {}
   };
 }
 function send(o) { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify(o)); }
+
+// ---------------- connection status (one bar, every screen) ----------------
+// States: idle | connecting | connected | reconnecting | offline.
+// The bar is the only place connection truth lives, so a mid-race drop can never be silent.
+const connBar = $('conn-bar'), connText = $('conn-text'), retryBtn = $('retry-btn');
+function setConn(s, text, cls) {
+  connBar.dataset.state = s;
+  connText.textContent = text;
+  const st = $('join-status');
+  if (st && (s === 'reconnecting' || s === 'offline')) { st.textContent = text; st.className = 'status ' + (cls || 'warn'); }
+  retryBtn.hidden = !(s === 'reconnecting' || s === 'offline');
+}
+retryBtn.addEventListener('click', () => {
+  suppressReconnect = false; reconnectAttempts = 0;
+  setConn('connecting', 'Reconnecting…');
+  try { state.ws && state.ws.close(); } catch {}
+  connect();
+});
+
+// Keep the phone awake while racing: a sleeping screen looks exactly like a dead controller.
+let wakeLock = null;
+async function holdWake() {
+  try {
+    if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen');
+  } catch {}
+}
+function releaseWake() { try { wakeLock && wakeLock.release(); } catch {} wakeLock = null; }
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.flow === 'racing') holdWake();
+});
 
 // Phones get suspended by the OS: the socket can die without a close event, leaving a
 // "connected but silent" controller. Watchdog: no pong for a while => force a reconnect.
@@ -49,7 +86,7 @@ let suppressReconnect = false;
 setInterval(() => {
   if (suppressReconnect) return;
   if (state.ws && state.ws.readyState === 1 && performance.now() - lastPong > 8000) {
-    $('join-status').textContent = 'Connection stale — reconnecting…';
+    setConn('reconnecting', 'Connection stale — reconnecting…', 'warn');
     try { state.ws.close(); } catch {}
   }
 }, 3000);
@@ -62,40 +99,58 @@ function onMessage(m) {
       localStorage.setItem('tkr-token', m.token);
       $('team-name').textContent = state.name || `Team ${m.teamId}`;
       $('team-color').style.background = m.color;
+      $('join-btn').disabled = false;
+      $('forget-btn').hidden = false;
+      setConn('connected', `Connected · ${state.name || ('Team ' + m.teamId)}`);
+      setStatus(`Joined as ${state.name || ('Team ' + m.teamId)}`, 'ok');
       showView('lobby');
       break;
-    case 'spectating': $('join-status').textContent = 'Lobby full — spectating.'; break;
+    case 'spectating':
+      setConn('connected', 'Connected · spectating (lobby full)');
+      setStatus('Lobby full — spectating.', 'warn');
+      break;
     case 'selectDenied': buzz(60); break;
     case 'removed': {
       // the host dropped this slot: forget the token and go back to the join screen
       state.token = null; state.teamId = 0; state.ready = false;
       localStorage.removeItem('tkr-token');
       suppressReconnect = true;
+      releaseWake();
       try { state.ws.close(); } catch {}
+      setConn('idle', 'Removed by host');
+      $('forget-btn').hidden = true;
       showView('join');
-      $('join-status').textContent = 'The host removed your team — tap JOIN to re-enter.';
+      setStatus('The host removed your team — tap JOIN to re-enter.', 'warn');
       break;
     }
-    case 'lobby':
+    case 'lobby': {
+      const prevFlow = state.flow;
       state.flow = m.state.flow;
+      if (prevFlow !== state.flow) onFlowChange(prevFlow, state.flow);
       const me = m.state.teams.find((t) => t.id === state.teamId);
       if (me) {
         state.charIdx = me.characterIdx;
         state.ready = me.ready;
         localStorage.setItem('tkr-name', me.name);
         $('team-name').textContent = me.name;
-        $('ping').textContent = me.ping || '--';
         renderChars(m.state.teams);
+        updateNetPill(me);
         $('ready-btn').textContent = state.ready ? 'READY ✓' : 'READY';
         $('ready-btn').classList.toggle('ready', state.ready);
+        $('ready-btn').setAttribute('aria-pressed', state.ready ? 'true' : 'false');
+        if (state.ws && state.ws.readyState === 1) setConn('connected', `Connected · ${me.name}`);
       }
       if (m.state.flow === 'prerace' || m.state.flow === 'racing' || m.state.flow === 'countdown') showView('race');
-      else if (m.state.flow === 'results' || m.state.flow === 'leaderboard') showView('end');
+      else if (m.state.flow === 'results' || m.state.flow === 'leaderboard') { renderEnd(); showView('end'); }
       else showView('lobby');
       break;
+    }
     case 'standings': {
       const me = (m.rows || []).find((r) => r.teamId === state.teamId);
-      $('race-pos').textContent = me ? `${['1st','2nd','3rd','4th','5th','6th'][me.place - 1] || ''} · L${me.lap}` : '';
+      if (me) {
+        state.lastPlace = me.place; state.lastLap = me.lap;
+        $('race-pos').textContent = `${['1st','2nd','3rd','4th','5th','6th'][me.place - 1] || ''} · L${me.lap}`;
+      } else $('race-pos').textContent = '';
       break;
     }
     case 'pong': {
@@ -103,10 +158,82 @@ function onMessage(m) {
       lastPong = now;
       log.addRtt(now - m.c);
       clock.addSample(m.c, now, m.s);
-      $('ping').textContent = Math.round(log.currentRtt);
+      updateNetPill();
       break;
     }
   }
+}
+
+function setStatus(text, cls) {
+  const st = $('join-status');
+  st.textContent = text;
+  st.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+/** Human-readable link quality: students don't think in milliseconds. */
+function linkQuality() {
+  const s = log.snapshot();
+  const rtt = s.p50 || 0;
+  if (!rtt) return { label: '…', cls: '' };
+  if (rtt <= 30 && s.jitter <= 12) return { label: 'EXCELLENT', cls: 'good' };
+  if (rtt <= 80) return { label: 'OK', cls: 'ok' };
+  return { label: 'LAGGY', cls: 'bad' };
+}
+
+function updateNetPill(me) {
+  const s = log.snapshot();
+  const ms = Math.round(s.p50 || 0);
+  $('ping').textContent = ms || '--';
+  const q = linkQuality();
+  $('ping-quality').textContent = q.label;
+  $('net-pill').className = q.cls;
+  $('conn-dot2').style.background = q.cls === 'good' ? '#43a047' : q.cls === 'ok' ? '#fdd835' : q.cls === 'bad' ? '#e53935' : '#666';
+  const d = $('net-detail');
+  if (d && !d.hidden) d.textContent = `ping ${ms}ms · p95 ${Math.round(s.p95 || 0)}ms · jitter ${Math.round(s.jitter || 0)}ms`;
+}
+$('net-pill').addEventListener('click', () => {
+  const d = $('net-detail');
+  d.hidden = !d.hidden;
+  if (!d.hidden) updateNetPill();
+});
+
+// Flow transitions drive the countdown overlay, wake lock and haptics.
+let cdTimer = 0;
+function onFlowChange(from, to) {
+  clearTimeout(cdTimer);
+  const ov = $('countdown-overlay');
+  ov.classList.remove('show', 'go');
+  if (to === 'countdown' || to === 'prerace') {
+    holdWake();
+    flashCountdown('…');
+    buzz([40, 60, 40]);
+  } else if (to === 'racing') {
+    holdWake();
+    flashCountdown('GO!', true);
+    buzz([0, 80, 40, 80, 40, 120]);
+    cdTimer = setTimeout(() => ov.classList.remove('show', 'go'), 1200);
+  } else if (to === 'results' || to === 'leaderboard') {
+    releaseWake();
+    if (state.lastPlace) buzz([0, 60, 60, 60, 60, 120]);
+  } else {
+    if (to === 'lobby') releaseWake();
+  }
+  $('race-team').textContent = state.name || (state.teamId ? `TEAM ${state.teamId}` : '');
+}
+function flashCountdown(text, go) {
+  const ov = $('countdown-overlay');
+  ov.textContent = text;
+  ov.classList.toggle('go', !!go);
+  ov.classList.remove('show'); void ov.offsetWidth; ov.classList.add('show');
+  if (!go) { clearTimeout(cdTimer); cdTimer = setTimeout(() => ov.classList.remove('show'), 1100); }
+}
+
+/** Personal result card: your place and points, not just "check the projector". */
+function renderEnd() {
+  const pts = [10, 8, 6, 4, 2, 1];
+  const p = state.lastPlace || 0;
+  $('end-place').textContent = p ? ['1st','2nd','3rd','4th','5th','6th'][p - 1] : '—';
+  $('end-detail').textContent = p ? `${state.name || ('Team ' + state.teamId)} · +${pts[p - 1] ?? 0} pts` : '';
 }
 
 // ping + stats reporting
@@ -160,15 +287,27 @@ $('ready-btn').addEventListener('pointerdown', (e) => {
   buzz(state.ready ? 30 : 10);
 });
 $('name-input').value = state.name;
+$('forget-btn').hidden = !state.token;
 autoResume();
-$('join-btn').addEventListener('click', () => {
-  state.name = $('name-input').value.trim().slice(0, 14);
+function doJoin() {
+  state.name = $('name-input').value.trim().slice(0, 14) || state.name;
+  $('name-input').value = state.name;
   localStorage.setItem('tkr-name', state.name);
-  $('join-status').textContent = 'Joining…';
+  setStatus('Joining…', '');
+  setConn('connecting', 'Connecting…');
   suppressReconnect = false;
   reconnectAttempts = 0;
+  $('join-btn').disabled = true;
   try { state.ws && state.ws.close(); } catch {}
   connect();
+}
+$('join-btn').addEventListener('click', doJoin);
+$('name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doJoin(); } });
+$('forget-btn').addEventListener('click', () => {
+  state.token = null; state.teamId = 0;
+  localStorage.removeItem('tkr-token');
+  $('forget-btn').hidden = true;
+  setStatus('Saved slot forgotten — enter a name and JOIN for a fresh slot.', '');
 });
 window.addEventListener('online', () => {
   if (suppressReconnect) return;
@@ -228,6 +367,21 @@ document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: fals
 document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
 function buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch {} }
+$('pause-btn').addEventListener('click', (e) => {
+  e.preventDefault();
+  pauseEdge = true;
+  if (state.flow === 'racing') sendInput();
+  buzz(20);
+  setStatus('Pause requested — the host decides.', '');
+});
+$('fs-btn').addEventListener('click', async (e) => {
+  e.preventDefault();
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await document.documentElement.requestFullscreen();
+  } catch {}
+});
+$('end-lobby-btn').addEventListener('click', () => showView('lobby'));
 function hex(c) { return '#' + (c >>> 0).toString(16).padStart(6, '0').slice(-6); }
 
 $('end-body').textContent = 'Race complete — check the projector for the leaderboard!';

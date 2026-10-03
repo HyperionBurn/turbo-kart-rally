@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e1a">
 <title>Turbo Kart Rally — Controller</title>
 <link rel="stylesheet" href="/controller/controller.css">
 </head>
@@ -10,56 +11,76 @@
 <div id="app">
   <div id="rotate-hint">ROTATE DEVICE · LANDSCAPE WORKS BEST</div>
 
+  <!-- Persistent connection bar: visible on every screen so a mid-race drop is never silent -->
+  <div id="conn-bar" data-state="idle" role="status" aria-live="polite">
+    <span id="conn-dot" aria-hidden="true"></span>
+    <span id="conn-text">Not connected</span>
+    <button id="retry-btn" type="button" hidden>RETRY</button>
+  </div>
+
   <!-- JOIN -->
-  <section id="view-join" class="view active">
+  <section id="view-join" class="view active" aria-label="Join race">
     <h1>TURBO KART RALLY</h1>
     <p class="sub">Team Controller</p>
-    <input id="name-input" maxlength="14" placeholder="TEAM NAME" autocomplete="off">
-    <button id="join-btn" class="big primary">JOIN RACE</button>
-    <p id="join-status" class="status"></p>
+    <label class="name-label" for="name-input">TEAM NAME</label>
+    <input id="name-input" maxlength="14" placeholder="e.g. TURBO TOADS" autocomplete="off" autocapitalize="characters" enterkeyhint="go">
+    <button id="join-btn" type="button" class="big primary">JOIN RACE</button>
+    <p id="join-status" class="status" aria-live="polite"></p>
+    <div class="join-row">
+      <button id="forget-btn" type="button" class="linklike" hidden>Forget saved slot</button>
+    </div>
+    <p class="hint small">Stay on this page during the race. If the screen sleeps, reopen it — your slot is saved.</p>
   </section>
 
   <!-- LOBBY / SELECT -->
-  <section id="view-lobby" class="view">
+  <section id="view-lobby" class="view" aria-label="Lobby">
     <header>
       <div id="team-chip"><span id="team-color"></span><span id="team-name">Team</span></div>
-      <div id="net-pill"><span id="ping">--</span> ms</div>
+      <div id="net-pill" title="Tap for details"><span id="conn-dot2" aria-hidden="true"></span><span id="ping">--</span>&nbsp;ms&nbsp;·&nbsp;<span id="ping-quality">…</span></div>
     </header>
-    <div id="char-grid"></div>
-    <button id="ready-btn" class="big primary">READY</button>
+    <div id="net-detail" hidden></div>
+    <div id="char-grid" role="listbox" aria-label="Choose your racer"></div>
+    <button id="ready-btn" type="button" class="big primary" aria-pressed="false">READY</button>
     <p class="hint">Pick your racer, press READY. Host starts the race.</p>
   </section>
 
   <!-- RACE -->
-  <section id="view-race" class="view">
+  <section id="view-race" class="view" aria-label="Race controls">
     <div class="race-hud">
       <span id="race-team"></span>
-      <span id="race-pos"></span>
+      <span id="race-pos" aria-live="polite"></span>
+      <span class="race-btns">
+        <button id="fs-btn" type="button" aria-label="Fullscreen">⛶</button>
+        <button id="pause-btn" type="button" aria-label="Pause request">II</button>
+      </span>
     </div>
+    <div id="countdown-overlay" aria-live="assertive"></div>
     <div class="pad">
       <div class="side left">
         <div class="pad-row">
-          <button class="pad-btn steer" id="ctl-left">◀</button>
-          <button class="pad-btn steer" id="ctl-right">▶</button>
+          <button class="pad-btn steer" id="ctl-left" type="button" aria-label="Steer left">◀</button>
+          <button class="pad-btn steer" id="ctl-right" type="button" aria-label="Steer right">▶</button>
         </div>
-        <button class="pad-btn drift" id="ctl-drift">DRIFT</button>
+        <button class="pad-btn drift" id="ctl-drift" type="button" aria-label="Drift or hop">DRIFT</button>
       </div>
       <div class="side mid">
-        <button class="pad-btn item" id="ctl-item">ITEM</button>
-        <button class="pad-btn look" id="ctl-look">LOOK</button>
+        <button class="pad-btn item" id="ctl-item" type="button" aria-label="Use item">ITEM</button>
+        <button class="pad-btn look" id="ctl-look" type="button" aria-label="Look back">LOOK</button>
       </div>
       <div class="side right">
-        <button class="pad-btn gas" id="ctl-gas">GAS</button>
-        <button class="pad-btn brake" id="ctl-brake">BRAKE</button>
+        <button class="pad-btn gas" id="ctl-gas" type="button" aria-label="Accelerate">GAS</button>
+        <button class="pad-btn brake" id="ctl-brake" type="button" aria-label="Brake">BRAKE</button>
       </div>
     </div>
   </section>
 
   <!-- END -->
-  <section id="view-end" class="view">
+  <section id="view-end" class="view" aria-label="Results">
     <h2 id="end-title">RESULTS</h2>
+    <div id="end-place" aria-live="polite"></div>
     <div id="end-body"></div>
     <p class="hint">Next race starts when the host is ready.</p>
+    <button id="end-lobby-btn" type="button" class="big primary">BACK TO LOBBY</button>
   </section>
 </div>
 <script type="module" src="/controller/controller.js"></script>

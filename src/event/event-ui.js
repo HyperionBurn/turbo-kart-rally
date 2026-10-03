@@ -69,6 +69,7 @@ export class EventUI {
     const teams = (this.lobby && this.lobby.teams) || [];
     const ready = teams.filter((t) => t.connected && t.ready).length;
     const connected = teams.filter((t) => t.connected).length;
+    const canStart = connected > 0;
     this.el.innerHTML = `
       <div class="ev-lobby">
         <div class="ev-left">
@@ -78,7 +79,9 @@ export class EventUI {
           ${s.lanWarning ? '<div class="ev-url warn">NO LAN IP FOUND — plug in Ethernet/hotspot, or type this URL on the phones</div>' : ''}
           ${s.altUrls && s.altUrls.length ? `<div class="ev-url alt">other interfaces: ${s.altUrls.join('  ')}</div>` : ''}
           <div class="ev-sub">${connected}/6 CONNECTED · ${ready} READY</div>
-          <button id="ev-start" class="btn primary big">CONTINUE → SETTINGS</button>
+          <div class="ev-progress" aria-hidden="true"><i style="width:${Math.round(ready / 6 * 100)}%"></i></div>
+          <button id="ev-start" class="btn primary big" ${canStart ? '' : 'disabled'}>${canStart ? 'CONTINUE → SETTINGS' : 'WAITING FOR TEAMS…'}</button>
+          ${canStart ? '' : '<div class="ev-hint">Teams: scan the QR, pick a racer, tap READY on your phone.</div>'}
           <button id="ev-solo" class="btn ghost">← SOLO MODE</button>
         </div>
         <div class="ev-slots">
@@ -86,7 +89,7 @@ export class EventUI {
         </div>
       </div>`;
     drawQr(this.el.querySelector('#ev-qr'), s.controllerUrl || '');
-    this.el.querySelector('#ev-start').onclick = () => this.h.goSettings();
+    if (canStart) this.el.querySelector('#ev-start').onclick = () => this.h.goSettings();
     this.el.querySelector('#ev-solo').onclick = () => this.h.backToTitle();
     this.el.querySelectorAll('[data-act]').forEach((b) => b.onclick = () => this.h.lobbyAction(b.dataset.act, +b.dataset.team));
   }
@@ -181,10 +184,12 @@ export class EventUI {
 
 function slotHtml(t) {
   const ch = CHARACTERS[t.characterIdx];
+  const hint = t.connected && !t.ready ? '<div class="slot-hint">👉 TAP READY ON PHONE</div>' : '';
   return `
     <div class="slot ${t.connected ? 'on' : ''} ${t.ready ? 'ready' : ''}" style="--tc:${t.color}" data-team="${t.id}">
       <div class="slot-head"><span class="dot" style="background:${t.color}"></span><b>${t.name}</b><span class="slot-state">${t.connected ? (t.ready ? 'READY' : 'IN LOBBY') : (t.ai ? 'AI' : 'EMPTY')}</span></div>
       <div class="slot-char">${ch ? ch.name : '—'}</div>
+      ${hint}
       <div class="slot-meta">${t.connected ? `${t.ping || 0}ms · batt ${t.battery != null ? t.battery + '%' : '--'}` : '&nbsp;'}</div>
       <div class="slot-acts">
         <button data-act="ready" data-team="${t.id}">FORCE READY</button>

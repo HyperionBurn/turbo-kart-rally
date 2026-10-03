@@ -52,6 +52,7 @@ export class SplitHUD {
         name.textContent = t ? t.name : (k.character ? k.character.name : 'RACER');
       }
       p.querySelector('.sp-pos').textContent = ORDINALS[(k.place || 1) - 1] || '--';
+      p.classList.toggle('first', (k.place || 99) === 1);
       p.querySelector('.sp-lap').textContent = k.finished ? 'FIN' : `LAP ${Math.min(k.lap || 1, race ? race.laps : 3)}/${race ? race.laps : 3}`;
       p.querySelector('.sp-speed i').style.width = `${Math.min(100, Math.abs(k.speed || 0) / 60 * 100)}%`;
       const it = k.item ? itemShort(k.item) : '';
