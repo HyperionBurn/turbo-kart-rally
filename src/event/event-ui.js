@@ -34,6 +34,15 @@ export class EventUI {
 
   setLobby(state) {
     const sig = JSON.stringify(state.teams && state.teams.map((t) => [t.id, t.name, t.connected, t.ready, t.ai, t.characterIdx]));
+    if (this.screen === 'prerace') {
+      // live prerace status: patch connection state in place, never full re-render
+      this._lobbySig = sig;
+      this.lobby = state;
+      if (this.el.querySelector('.ev-grid')) this._patchPrerace(state);
+      else this.render();
+      this._updateTicker();
+      return;
+    }
     if (this._lobbySig === sig && this.screen === 'lobby') {
       // ping/jitter changed — patch numbers in place without rebuilding DOM
       state.teams.forEach((t, i) => {
@@ -174,16 +183,57 @@ export class EventUI {
     const sess = this.session || {};
     const total = (sess.settings && sess.settings.raceCount) || sess.raceCount || 3;
     const idx = (sess.raceIndex || 0) + 1;
+    const racers = teams.filter((t) => t.connected || t.ai);
     this.el.innerHTML = `
       <div class="ev-prerace">
         <div class="ev-kicker">PALM COVE CIRCUIT</div>
         <h1>RACE ${idx} OF ${total}</h1>
         <div class="ev-grid">
-          ${teams.filter((t) => t.connected || t.ai).map((t) => `<div class="ev-racer" style="--tc:${t.color}"><b><i class="ev-dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${t.color};margin-right:8px;vertical-align:baseline"></i>${t.name}</b><span>${CHARACTERS[t.characterIdx] ? CHARACTERS[t.characterIdx].name : ''}</span></div>`).join('')}
+          ${racers.map((t) => `<div class="ev-racer" data-team="${t.id}" style="--tc:${t.color}"><b><i class="ev-dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${t.color};margin-right:8px;vertical-align:baseline"></i>${t.name}</b><span>${CHARACTERS[t.characterIdx] ? CHARACTERS[t.characterIdx].name : ''}</span><span class="ev-wait" style="display:none;font-size:12px;margin-left:6px">• waiting…</span></div>`).join('')}
         </div>
+        <div class="ev-sub" id="ev-prerace-status" style="font-size:13px;letter-spacing:1px">${preraceStatusText(racers)}</div>
         <div class="ev-sub">GET READY…</div>
         <div class="ev-controls">Hold GAS · DRIFT in corners · ITEM when lit</div>
       </div>`;
+  }
+
+  _patchPrerace(state) {
+    const grid = this.el.querySelector('.ev-grid');
+    if (!grid) { this.render(); return; }
+    const teams = (state && state.teams) || [];
+    const byId = new Map(teams.map((t) => [t.id, t]));
+    grid.querySelectorAll('.ev-racer').forEach((el) => {
+      const t = byId.get(+el.dataset.team);
+      if (!t) return;
+      const gone = !t.connected && !t.ai;
+      el.style.opacity = gone ? '0.45' : '';
+      let w = el.querySelector('.ev-wait');
+      if (gone && !w) {
+        w = document.createElement('span');
+        w.className = 'ev-wait';
+        w.style.cssText = 'font-size:12px;margin-left:6px';
+        w.textContent = '• waiting…';
+        el.appendChild(w);
+      }
+      if (w) w.style.display = gone ? '' : 'none';
+    });
+    // a racer that (re)connects mid-prerace with no element yet: append without rebuilding
+    const present = new Set([...grid.querySelectorAll('.ev-racer')].map((el) => +el.dataset.team));
+    for (const t of teams) {
+      if ((t.connected || t.ai) && !present.has(t.id)) {
+        const div = document.createElement('div');
+        div.className = 'ev-racer';
+        div.dataset.team = t.id;
+        div.style.cssText = `--tc:${t.color}`;
+        div.innerHTML = `<b><i class="ev-dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${t.color};margin-right:8px;vertical-align:baseline"></i>${t.name}</b><span>${CHARACTERS[t.characterIdx] ? CHARACTERS[t.characterIdx].name : ''}</span><span class="ev-wait" style="display:none;font-size:12px;margin-left:6px">• waiting…</span>`;
+        grid.appendChild(div);
+      }
+    }
+    const status = this.el.querySelector('#ev-prerace-status');
+    if (status) {
+      const racers = [...grid.querySelectorAll('.ev-racer')].map((el) => byId.get(+el.dataset.team)).filter(Boolean);
+      status.textContent = preraceStatusText(racers);
+    }
   }
 
   _renderResults() {
@@ -305,6 +355,10 @@ function slotHtml(t) {
 }
 
 function ord(n) { return ['1st', '2nd', '3rd', '4th', '5th', '6th'][n - 1] || `${n}th`; }
+function preraceStatusText(racers) {
+  const waiting = (racers || []).filter((t) => !t.connected && !t.ai).map((t) => t.name);
+  return waiting.length ? `WAITING ON: ${waiting.join(', ')}` : 'ALL TEAMS IN — GOOD TO GO';
+}
 function parseRaceTime(t) {
   if (t == null) return null;
   if (typeof t === 'number') return isFinite(t) ? t : null;

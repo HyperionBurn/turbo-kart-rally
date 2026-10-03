@@ -178,6 +178,22 @@ header { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 34px); le
 #end-champ[hidden] { display: none; }
 #end-body { color: #dfe6ff; }
 
+/* ---- mini standings board (top-6 from the host `results` message) ---- */
+#end-standings {
+  width: min(92vw, 420px); box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 4px; margin-top: 8px;
+}
+#end-standings[hidden] { display: none; }
+.end-row {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,.05); border: 2px solid #2a3050; border-radius: 10px;
+  padding: 6px 12px; font-size: 14px; font-weight: 800;
+}
+.end-row .p { min-width: 2.4em; color: #9fb0e8; font-variant-numeric: tabular-nums; }
+.end-row .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.end-row .pts { color: #fdd835; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.end-row.own { background: rgba(253,216,53,.08); box-shadow: 0 0 12px rgba(253,216,53,.25); }
+
 /* ---- how-to sheet + prefs (lobby only, in-flow so READY is never covered) ---- */
 #view-lobby { justify-content: flex-start; padding-top: calc(env(safe-area-inset-top, 0px) + 76px); overflow-y: auto; }
 #howto-card {

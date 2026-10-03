@@ -13,6 +13,7 @@ const state = {
   pointsTable: [10, 8, 6, 4, 2, 1], raceIndex: 0, lastPlace: 0, lastLap: 1, itemHeld: null,
   totalLaps: null, totalRaces: null, finalLapShown: false,
   itemJustUsed: null, itemUsedAt: 0, lowBattWarned: false,
+  lastBoard: null, finishJingleKey: null,
 };
 const log = new LinkStats();
 const clock = new ClockSync();
@@ -228,6 +229,32 @@ function onMessage(m) {
       if (!me) updateWrongWay(false);
       break;
     }
+    case 'results': {
+      // Optional mini standings board (server crew adds this; may never arrive).
+      // Tolerant: missing/empty rows leave the personal end card untouched.
+      try {
+        const rows = Array.isArray(m.rows) ? m.rows : [];
+        if (typeof m.raceIndex === 'number') state.raceIndex = m.raceIndex;
+        const norm = rows
+          .filter((r) => r && typeof r === 'object')
+          .map((r) => ({
+            teamId: (typeof r.teamId === 'number') ? r.teamId : null,
+            place: (+r.place || 0),
+            name: (typeof r.name === 'string' && r.name) ? r.name : null,
+            points: (typeof r.points === 'number' && Number.isFinite(r.points)) ? r.points : null,
+          }))
+          .sort((a, b) => ((a.place || 999) - (b.place || 999)))
+          .slice(0, 6);
+        state.lastBoard = norm;
+        const mine = norm.find((r) => r.teamId !== null && r.teamId === state.teamId);
+        if (mine && mine.place) state.lastPlace = mine.place;
+        if (state.flow === 'results' || state.flow === 'leaderboard') {
+          renderEnd();
+          playFinishJingle(state.lastPlace);
+        }
+      } catch {}
+      break;
+    }
     case 'pong': {
       const now = performance.now();
       lastPong = now;
@@ -285,13 +312,25 @@ function onFlowChange(from, to) {
     // held-item display is dropped (standings will re-assert it).
     state.lastPlace = 0; state.lastLap = 1;
     state.itemJustUsed = null;
+    state.lastBoard = null; state.finishJingleKey = null;
+    const board = $('end-standings');
+    if (board) { board.hidden = true; board.textContent = ''; }
     setItemHeld(null);
     updateWrongWay(false);
     maybeBattWarn();
   }
   const ov = $('countdown-overlay');
   ov.classList.remove('show', 'go');
-  if (to === 'countdown' || to === 'prerace') {
+  if (to === 'prerace') {
+    holdWake();
+    flashCountdown('GET READY…');
+    // Prerace waits on the host: keep the interstitial up (cancel the
+    // transient 1.1s hide) so players know they are connected.
+    clearTimeout(cdTimer);
+    ov.textContent = 'GET READY…';
+    ov.classList.add('show');
+    buzz([40, 60, 40]);
+  } else if (to === 'countdown') {
     holdWake();
     flashCountdown('…');
     buzz([40, 60, 40]);
@@ -303,6 +342,7 @@ function onFlowChange(from, to) {
   } else if (to === 'results' || to === 'leaderboard') {
     releaseWake();
     if (state.lastPlace) buzz([0, 60, 60, 60, 60, 120]);
+    playFinishJingle(state.lastPlace);
   } else {
     if (to === 'lobby') releaseWake();
   }
@@ -319,17 +359,55 @@ function flashCountdown(text, go) {
 
 /** Personal result card: your place and points, not just "check the projector". */
 function renderEnd() {
-  const pts = state.pointsTable || [10, 8, 6, 4, 2, 1];
-  const p = state.lastPlace || 0;
-  const ord = ordinal(p);
-  const placeEl = $('end-place'), detailEl = $('end-detail'), champEl = $('end-champ');
-  if (placeEl) placeEl.textContent = ord || '—';
-  if (detailEl) detailEl.textContent = ord ? `${state.name || ('Team ' + state.teamId)} · +${pts[p - 1] ?? 0} pts` : '';
-  if (champEl) {
-    if (p === 1) { champEl.textContent = '🏆 CHAMPION OF THE RACE'; champEl.hidden = false; }
-    else { champEl.textContent = ''; champEl.hidden = true; }
-  }
-  updateRaceLines();
+  try {
+    const pts = state.pointsTable || [10, 8, 6, 4, 2, 1];
+    const p = state.lastPlace || 0;
+    const ord = ordinal(p);
+    const placeEl = $('end-place'), detailEl = $('end-detail'), champEl = $('end-champ');
+    if (placeEl) placeEl.textContent = ord || '—';
+    if (detailEl) detailEl.textContent = ord ? `${state.name || ('Team ' + state.teamId)} · +${pts[p - 1] ?? 0} pts` : '';
+    if (champEl) {
+      if (p === 1) { champEl.textContent = '🏆 CHAMPION OF THE RACE'; champEl.hidden = false; }
+      else { champEl.textContent = ''; champEl.hidden = true; }
+    }
+    renderBoard();
+    updateRaceLines();
+  } catch {}
+}
+
+/** Mini standings board: top-6 rows from the cached `results` message.
+ *  No-op (hidden, personal card untouched) when no board has arrived yet.
+ *  Tolerant: empty rows, missing names/points render as "—", never throws. */
+function renderBoard() {
+  try {
+    const el = $('end-standings');
+    if (!el) return;
+    const board = Array.isArray(state.lastBoard) ? state.lastBoard : null;
+    if (!board || board.length === 0) { el.hidden = true; el.textContent = ''; return; }
+    el.textContent = '';
+    const top = board.slice(0, 6);
+    for (const r of top) {
+      if (!r || typeof r !== 'object') continue;
+      const row = document.createElement('div');
+      const own = (r.teamId !== null && r.teamId !== undefined && r.teamId === state.teamId);
+      row.className = 'end-row' + (own ? ' own' : '');
+      if (own && state.color) {
+        try { row.style.borderColor = state.color; } catch {}
+      }
+      const pEl = document.createElement('span');
+      pEl.className = 'p';
+      pEl.textContent = (r.place && ordinal(r.place)) ? ordinal(r.place) : '—';
+      const nEl = document.createElement('span');
+      nEl.className = 'n';
+      nEl.textContent = (typeof r.name === 'string' && r.name) ? r.name : '—';
+      const ptsEl = document.createElement('span');
+      ptsEl.className = 'pts';
+      ptsEl.textContent = (typeof r.points === 'number' && Number.isFinite(r.points)) ? `+${r.points}` : '—';
+      row.append(pEl, nEl, ptsEl);
+      el.appendChild(row);
+    }
+    el.hidden = false;
+  } catch {}
 }
 
 /** Pure race-feel helpers (kept side-effect free so they stay unit-testable). */
@@ -453,6 +531,31 @@ function beep(freq = 660, dur = 0.1, type = 'square', vol = 0.06) {
     if (actx.state === 'suspended') actx.resume();
   } catch {}
 }, { once: false, passive: true }));
+
+/** Finish jingle on entering results/leaderboard (never overlaps countdown/GO:
+ *  different flow entirely). Gated behind the sound toggle via beep().
+ *  1st: rising champion arpeggio (4 notes); top-3: pleasant two-note;
+ *  else: single neutral blip. Deduped per race+place so a `results`
+ *  message arriving right after the flow change doesn't double-play. */
+function playFinishJingle(place) {
+  try {
+    if (!soundOn()) return false;
+    const p = +place || 0;
+    const key = `${(typeof state.raceIndex === 'number') ? state.raceIndex : '?'}:${p}`;
+    if (state.finishJingleKey === key) return false;
+    state.finishJingleKey = key;
+    if (p === 1) {
+      const notes = [523.25, 659.25, 783.99, 1046.5];
+      notes.forEach((f, i) => setTimeout(() => beep(f, 0.14), i * 130));
+    } else if (p === 2 || p === 3) {
+      beep(659.25, 0.12);
+      setTimeout(() => beep(880, 0.16), 140);
+    } else {
+      beep(440, 0.12);
+    }
+    return true;
+  } catch { return false; }
+}
 
 // ping + stats reporting
 setInterval(() => send({ type: 'ping', c: performance.now() }), 1000);
@@ -684,4 +787,4 @@ function applyHowto() {
 
 // Light-verification hook: lets a single test page dispatch synthetic inbound
 // messages and call the pure helpers without touching the network.
-window.__tkr = { state, onMessage, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, setItemHeld, maybeBattWarn, buzz, beep, hapticsOn, soundOn, applyHand, applyHowto, applyPrefToggles, onFlowChange, updateRocketHint, updateWrongWay, updateRaceLines, syncItemHint };
+window.__tkr = { state, onMessage, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, renderBoard, playFinishJingle, setItemHeld, maybeBattWarn, buzz, beep, hapticsOn, soundOn, applyHand, applyHowto, applyPrefToggles, onFlowChange, updateRocketHint, updateWrongWay, updateRaceLines, syncItemHint };

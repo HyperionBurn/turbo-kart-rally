@@ -401,7 +401,13 @@ bus.on('net:lobby', ({ state }) => {
   if (eventUI) eventUI.setLobby(state);
   syncDrivers();
 });
-bus.on('net:pause', () => { /* reserved: per-team pause request */ });
+bus.on('net:pause', ({ teamId } = {}) => {
+  // a phone's pause button is a request, not a command: show it, ping audio, let the host decide
+  if (mode !== 'event' || !world || world.mode !== 'event') return;
+  if (eventPhase !== 'countdown' && eventPhase !== 'racing') return;
+  bus.emit('ev:pauseRequest', { teamId: teamId || 0 });
+  flashEventBanner(`${teamName(teamId || 0).toUpperCase()} WANTS PAUSE`, true);
+});
 
 /** Switch karts between network input and AI based on lobby state. */
 function syncDrivers() {

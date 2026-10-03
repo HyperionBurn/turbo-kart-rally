@@ -261,8 +261,17 @@ function attach(ws, t, m) {
   broadcastLobby();
 }
 
-/** Between-events fresh start WITHOUT dropping connected phones. */
+/** Between-events fresh start WITHOUT dropping connected phones.
+ * GUARD (six-player-party-racer): ignored while session.flow is racing/countdown/prerace —
+ * a mid-race slot wipe would corrupt a live race (names/characterIdx/reconnect
+ * tokens cleared mid-race would desync the host + phones). Log-and-ignore; lobby,
+ * select, settings, results, leaderboard flows may still reset. ('countdown' is not
+ * a current flow value but is guarded in case the host ever sets it.) */
 function resetSlots() {
+  if (['racing', 'countdown', 'prerace'].includes(session.flow)) {
+    log(`resetSlots ignored during flow=${session.flow}`);
+    return;
+  }
   for (const t of teams) {
     if (!t.connected) {
       t.name = `Team ${t.id}`;
@@ -322,6 +331,11 @@ function hostAction(action) {
 function pushSession() { send(hostWs, { type: 'session', state: session, net: netInfo() }); }
 function applyResults(results) {
   // results: [{teamId, place}]
+  // raceIndex semantics (six-player-party-racer): `finishedIndex` below is the
+  // just-finished race's index, captured BEFORE the increment (== the
+  // raceHistory entry's raceIndex). The broadcast `raceIndex` field carries this
+  // pre-increment value so phones can match results to the race they just ran.
+  const finishedIndex = session.raceIndex;
   const gained = {};
   for (const r of results) {
     const pts = session.pointsTable[r.place - 1] ?? 0;
@@ -337,6 +351,25 @@ function applyResults(results) {
   session.raceIndex++;
   session.flow = 'leaderboard';
   persist(); pushSession(); broadcastLobby();
+  // Phone results broadcast (ADD-ONLY, six-player-party-racer): best-effort push of
+  // {type:'results', raceIndex: finishedIndex, rows:[{teamId, place, name, points}]}
+  // to every connected team socket + spectators. Rows are data (disconnected slots
+  // still contribute rows); delivery is best-effort (only live sockets get it).
+  // teamId<=0 filler rows are excluded. Host flow above is untouched.
+  try {
+    const rows = (Array.isArray(results) ? results : [])
+      .filter((r) => r && Number(r.teamId) > 0)
+      .map((r) => {
+        const tid = Number(r.teamId);
+        const s = session.scores.find((x) => x.teamId === tid);
+        const t = teams[tid - 1];
+        const name = (s && s.name) || (t && t.name) || `Team ${tid}`;
+        return { teamId: tid, place: r.place, name, points: gained[tid] ?? gained[r.teamId] ?? 0 };
+      });
+    const msg = { type: 'results', raceIndex: finishedIndex, rows };
+    for (const t of teams) if (t.ws) send(t.ws, msg);
+    for (const s of spectators) send(s, msg);
+  } catch (err) { log(`results broadcast error: ${err && err.message}`); }
 }
 
 // keepalive + AI replacement timeout

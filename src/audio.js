@@ -172,6 +172,26 @@ export class AudioEngine {
       this.beep(1046, 0.09, 'triangle', 0.12); this.beep(1318, 0.14, 'triangle', 0.1);
     });
     on('ev:champion', () => { this.fanfare(1); this.whoosh(0.8, 1.2); });
+    // host pause request: short distinctive double-blip (triangle D6→A5, unlike square countdown ticks)
+    on('ev:pauseRequest', () => {
+      const t = this.ctx.currentTime;
+      this._osc('triangle', 1175, t, 0.09, 0.18);
+      this._osc('triangle', 880, t + 0.12, 0.14, 0.18);
+    });
+    // soft all-ready chime on the transition to 6/6 connected+ready (net:lobby carries the teams)
+    on('net:lobby', (d) => {
+      const teams = d && d.state && d.state.teams;
+      if (!Array.isArray(teams)) return;
+      const n = teams.filter((t) => t.connected && t.ready).length;
+      const all = n >= 6;
+      if (all && !this._wasAllReady) {
+        const t = this.ctx.currentTime;
+        this._osc('triangle', 784, t, 0.12, 0.1);
+        this._osc('triangle', 988, t + 0.1, 0.12, 0.1);
+        this._osc('triangle', 1175, t + 0.2, 0.24, 0.1);
+      }
+      this._wasAllReady = all;
+    });
   }
 
   // ------------------------------------------------------------------ public controls
