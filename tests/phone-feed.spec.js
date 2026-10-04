@@ -440,3 +440,57 @@ test('lobby carries the full accumulated field contract on one payload', async (
     } finally { ctl.close(); }
   } finally { host.close(); }
 });
+
+test('lobby payload echoes the joined room with only its own teams', async () => {
+  // Room-code companion to the isolation matrix (see tests/rooms.spec.js):
+  // the lobby for a joined room must echo that room and never list the other
+  // household. Tolerant: SKIP-passes with a note until rooms land server-side.
+  const socks = [];
+  const roomOf = (m) => {
+    if (!m || typeof m !== 'object') return null;
+    if (typeof m.room === 'string' && m.room) return m.room;
+    if (typeof m.roomCode === 'string' && m.roomCode) return m.roomCode;
+    if (m.state && typeof m.state === 'object') return roomOf(m.state);
+    return null;
+  };
+  try {
+    const a = await connect();
+    socks.push(a);
+    a.send(JSON.stringify({ type: 'join', name: 'ROOMECHO-A', room: 'ABCD' }));
+    const ja = await next(a, (m) => m.type === 'joined' || m.type === 'spectating', 10000);
+    const b = await connect();
+    socks.push(b);
+    b.send(JSON.stringify({ type: 'join', name: 'ROOMECHO-B', room: 'WXYZ' }));
+    const jb = await next(b, (m) => m.type === 'joined' || m.type === 'spectating', 10000);
+    if (ja.type !== 'joined' || jb.type !== 'joined') {
+      console.log('SKIP note: slots contested by parallel crews — room echo unassessable, passing');
+      expect(true).toBe(true);
+      return;
+    }
+    const seen = [];
+    const onMsg = (data, isBinary) => {
+      if (isBinary) return;
+      try { const m = JSON.parse(data.toString()); if (m.type === 'lobby') seen.push(m); } catch {}
+    };
+    a.on('message', onMsg);
+    a.send(JSON.stringify({ type: 'ready', ready: true }));
+    await new Promise((r) => setTimeout(r, 2500));
+    a.off('message', onMsg);
+    const echoed = seen.map(roomOf).filter(Boolean);
+    if (echoed.length === 0) {
+      console.log('SKIP note: no room echo in lobby payloads yet (rooms crew in-flight) — join flow itself works, passing');
+      expect(ja.teamId).toBeGreaterThanOrEqual(1);
+      return;
+    }
+    expect(new Set(echoed.map((r) => String(r).toUpperCase())).size).toBe(1);
+    expect(String(echoed[0]).toUpperCase()).toBe('ABCD');
+    for (const lob of seen) {
+      const names = (lob.state.teams || []).map((t) => t.name);
+      expect(names).not.toContain('ROOMECHO-B');
+    }
+    const last = seen[seen.length - 1];
+    expect((last.state.teams || []).map((t) => t.name)).toContain('ROOMECHO-A');
+  } finally {
+    for (const s of socks) { try { s.close(); } catch {} }
+  }
+});

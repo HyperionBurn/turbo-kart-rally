@@ -286,6 +286,102 @@ function percentiles(a) {
 }
 const netOffsets = new Map();      // teamId -> client clock offset vs server (reported by controller)
 
+// ---- event room codes (six-player-party-racer room isolation) -------------------------------
+// 4 chars from ABCDEFGHJKMNPQRSTUVWXYZ23456789 (no I/L/O/0/1, avoids misreads on a projector).
+let eventRoom = null;
+const ROOM_RE = /^[A-HJ-KM-NP-Z2-9]{4}$/i;
+const ROOM_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function normalizeRoom(v) {
+  if (v == null) return null;
+  const s = String(v).trim().toUpperCase();
+  return ROOM_RE.test(s) ? s : null;
+}
+function roomFromUrl() {
+  try { return normalizeRoom(new URLSearchParams(location.search).get('room')); }
+  catch { return null; }
+}
+function generateRoom() {
+  const alpha = ROOM_ALPHABET;
+  let out = '';
+  try {
+    const buf = new Uint32Array(4);
+    if (crypto.getRandomValues) crypto.getRandomValues(buf);
+    else for (let i = 0; i < 4; i++) buf[i] = (Math.random() * 0xffffffff) | 0;
+    for (let i = 0; i < 4; i++) out += alpha[buf[i] % alpha.length];
+  } catch {
+    for (let i = 0; i < 4; i++) out += alpha[(Math.random() * alpha.length) | 0];
+  }
+  return out;
+}
+/** Resolve the host room: reuse ?room= when valid, else mint + replaceState into the URL. */
+function ensureEventRoom() {
+  const fromUrl = roomFromUrl();
+  if (fromUrl) {
+    eventRoom = fromUrl;
+    try {
+      // normalize the query spelling (?room=test -> ?room=TEST); no reload
+      const u = new URL(location.href);
+      if (u.searchParams.get('room') !== eventRoom) {
+        u.searchParams.set('room', eventRoom);
+        history.replaceState(null, '', u.toString());
+      }
+    } catch {}
+    return eventRoom;
+  }
+  eventRoom = generateRoom();
+  try {
+    const u = new URL(location.href);
+    u.searchParams.set('room', eventRoom);
+    history.replaceState(null, '', u.toString());
+  } catch {}
+  return eventRoom;
+}
+/** Controller join URL for the QR: append ?room= (or &room=) unless already present. */
+function roomJoinUrl(base) {
+  if (!base || !eventRoom) return base;
+  if (base.includes('room=')) return base;
+  return base + (base.includes('?') ? '&' : '?') + 'room=' + eventRoom;
+}
+/** (Re)bind this socket to our room. The bare hostHello in network-client.js still goes
+ *  out first (file owned by another crew); this room hello follows it on open (queued
+ *  while down) and on every reconnect via net:connected. */
+function sendRoomHello() {
+  if (mode === 'event' && eventRoom && netClient) {
+    try { netClient.send({ type: 'hostHello', room: eventRoom }); } catch {}
+  }
+}
+/** Stamp roomCode + room join URL onto the live session state (tolerant: no new required fields). */
+function paintRoomIntoSession() {
+  if (!eventSession || !eventRoom) return;
+  try {
+    // tolerate a future server echoing the binding back as state.room
+    const srvRoom = normalizeRoom(eventSession.room);
+    if (srvRoom && srvRoom !== eventRoom) {
+      eventRoom = srvRoom;
+      try {
+        const u = new URL(location.href);
+        u.searchParams.set('room', eventRoom);
+        history.replaceState(null, '', u.toString());
+      } catch {}
+    }
+  } catch {}
+  eventSession.roomCode = eventRoom;
+  if (eventSession.controllerUrl) eventSession.controllerUrl = roomJoinUrl(eventSession.controllerUrl);
+}
+/** Fresh code on demand (lobby NEW CODE button): mint, restate URL, re-hello, repaint lobby. */
+function regenerateEventRoom() {
+  eventRoom = generateRoom();
+  try {
+    const u = new URL(location.href);
+    u.searchParams.set('room', eventRoom);
+    history.replaceState(null, '', u.toString());
+  } catch {}
+  sendRoomHello();
+  paintRoomIntoSession();
+  if (eventUI && typeof eventUI.setRoomCode === 'function') { try { eventUI.setRoomCode(eventRoom); } catch {} }
+  else if (eventSession && eventUI) { try { eventUI.setSession(eventSession); } catch {} }
+}
+
 setInterval(() => {
   const w = world;
   if (mode !== 'event' || !w || w.mode !== 'event' || !netClient || state !== 'racing') return;
@@ -296,6 +392,7 @@ setInterval(() => {
 function startEvent() {
   mode = 'event';
   eventPhase = 'lobby';
+  ensureEventRoom();
   menu.hideAll();
   hud.hide();
   document.body.dataset.state = 'event';
@@ -303,14 +400,23 @@ function startEvent() {
   if (!split) split = new SplitScreen(renderer, mods.camera && mods.camera.ChaseCamera);
   if (!splitHud) splitHud = new SplitHUD(uiRoot);
   if (!netClient) { netClient = new HostNetworkClient(); netClient.connect(); }
+  sendRoomHello();
   setEventFlow('lobby');
   setSessionSettings();
+  if (eventUI && typeof eventUI.setRoomCode === 'function') { try { eventUI.setRoomCode(eventRoom); } catch {} }
 }
 
 function endEvent() {
   mode = 'solo';
   eventPhase = null;
-  if (eventUI) eventUI.hide();
+  // drop the in-memory binding (and the flow's copy) but KEEP ?room= in the URL,
+  // so re-entering EVENT MODE reuses the same room. A new room = fresh load w/o query or NEW CODE.
+  eventRoom = null;
+  if (eventSession) { try { delete eventSession.roomCode; } catch {} }
+  if (eventUI) {
+    if (typeof eventUI.setRoomCode === 'function') { try { eventUI.setRoomCode(null); } catch {} }
+    eventUI.hide();
+  }
   if (splitHud) splitHud.hide();
   disposeWorld();
   goToTitle();
@@ -325,6 +431,7 @@ function eventHandlers() {
     showLeaderboard: () => setEventFlow('leaderboard'),
     nextRace: () => setEventFlow('settings'),
     resetTournament: () => { netClient && netClient.send({ type: 'hostResetSession' }); },
+    newRoom: () => regenerateEventRoom(),
     endEvent,
     lobbyAction: (act, teamId) => {
       if (!netClient) return;
@@ -370,9 +477,12 @@ function setSessionSettings() {
   if (eventSession) {
     eventSession.controllerUrl = eventNet && eventNet.controllerUrl ? eventNet.controllerUrl : `${location.origin}/controller`;
     eventSession.lanWarning = !(eventNet && eventNet.controllerUrl);
+    paintRoomIntoSession();
     if (eventUI) eventUI.setSession(eventSession);
   }
 }
+
+bus.on('net:connected', () => { sendRoomHello(); });
 
 bus.on('net:session', ({ state, net }) => {
   const prev = eventSession;
@@ -384,6 +494,7 @@ bus.on('net:session', ({ state, net }) => {
   state.controllerUrl = eventNet && eventNet.controllerUrl ? eventNet.controllerUrl : `${location.origin}/controller`;
   state.lanWarning = !(eventNet && eventNet.controllerUrl);
   state.altUrls = (eventNet && eventNet.ips || []).slice(1).map((ip) => `http://${ip}:${eventNet.port}/controller`);
+  paintRoomIntoSession();
   if (eventUI) eventUI.setSession(state);
 });
 const prevSeen = new Map(); // teamId -> connection signature, for join/leave cues
@@ -1067,6 +1178,8 @@ window.__game = {
     };
   },
   get world() { return world; },
+  get eventRoom() { return eventRoom; },
+  newRoom: () => regenerateEventRoom(),
   get mods() { return mods; },
   audio, hud, menu, renderer, camera, bus,
   startRace: (s = {}) => startRace({ ...lastSettings, ...s }),

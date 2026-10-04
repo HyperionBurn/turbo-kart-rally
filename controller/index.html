@@ -22,12 +22,22 @@
   <section id="view-join" class="view active" aria-label="Join race">
     <h1>TURBO KART RALLY</h1>
     <p class="sub">Team Controller</p>
-    <label class="name-label" for="name-input">TEAM NAME</label>
-    <input id="name-input" maxlength="14" placeholder="e.g. TURBO TOADS" autocomplete="off" autocapitalize="characters" enterkeyhint="go">
-    <button id="join-btn" type="button" class="big primary">JOIN RACE</button>
-    <p id="join-status" class="status" aria-live="polite"></p>
-    <div class="join-row">
-      <button id="forget-btn" type="button" class="linklike" hidden>Forget saved slot</button>
+    <button id="room-chip-join" type="button" class="room-chip" hidden title="Switch room"></button>
+    <div id="room-step">
+      <label class="name-label" for="room-input">ROOM CODE</label>
+      <input id="room-input" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" enterkeyhint="go">
+      <button id="room-join-btn" type="button" class="big primary">JOIN WITH CODE</button>
+      <button id="room-rejoin-btn" type="button" class="linklike" hidden></button>
+      <p id="room-status" class="status" aria-live="polite"></p>
+    </div>
+    <div id="name-step">
+      <label class="name-label" for="name-input">TEAM NAME</label>
+      <input id="name-input" maxlength="14" placeholder="e.g. TURBO TOADS" autocomplete="off" autocapitalize="characters" enterkeyhint="go">
+      <button id="join-btn" type="button" class="big primary">JOIN RACE</button>
+      <p id="join-status" class="status" aria-live="polite"></p>
+      <div class="join-row">
+        <button id="forget-btn" type="button" class="linklike" hidden>Forget saved slot</button>
+      </div>
     </div>
     <p class="hint small">Stay on this page during the race. If the screen sleeps, reopen it — your slot is saved.</p>
   </section>
@@ -36,6 +46,7 @@
   <section id="view-lobby" class="view" aria-label="Lobby">
     <header>
       <div id="team-chip"><span id="team-color"></span><span id="team-name">Team</span></div>
+      <button id="room-chip-lobby" type="button" class="room-chip" title="Switch room">ROOM —</button>
       <div id="net-pill" title="Tap for details"><span id="conn-dot2" aria-hidden="true"></span><span id="ping">--</span>&nbsp;ms&nbsp;·&nbsp;<span id="ping-quality">…</span></div>
     </header>
     <div id="net-detail" hidden></div>
@@ -79,6 +90,7 @@
   <section id="view-race" class="view" aria-label="Race controls">
     <div class="race-hud">
       <span id="race-team"></span>
+      <button id="room-chip-race" type="button" class="room-chip" title="Switch room">ROOM —</button>
       <span id="race-pos" aria-live="polite"></span>
       <span class="race-btns">
         <button id="fs-btn" type="button" aria-label="Fullscreen">⛶</button>

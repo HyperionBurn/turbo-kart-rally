@@ -19,10 +19,20 @@ export class EventUI {
     this.screen = null;
     this.lobby = null;   // last lobby state
     this.session = null; // last session state
+    this.roomCode = null; // event room code (via setSession state.roomCode or setRoomCode)
     this.portraits = null;
   }
 
   setPortraitProvider(fn) { this.portraitFn = fn; }
+
+  /** Room code setter: shows the code in the lobby even before the first session arrives. */
+  setRoomCode(code) {
+    const next = code || null;
+    this.roomCode = next;
+    // always repaint the lobby (even when unchanged): a same-signature setSession may
+    // have adopted the code without re-rendering, leaving the display stale
+    if (this.screen === 'lobby') this.render();
+  }
 
   show(screen) {
     this.screen = screen;
@@ -65,11 +75,12 @@ export class EventUI {
     this._updateTicker();
   }
   setSession(state) {
-    const sig = JSON.stringify([state.flow, state.raceIndex, state.settings, (state.scores || []).map((s) => [s.teamId, s.total, s.wins]), state.lastResults && state.lastResults.length, state.controllerUrl]);
+    const sig = JSON.stringify([state.flow, state.raceIndex, state.settings, (state.scores || []).map((s) => [s.teamId, s.total, s.wins]), state.lastResults && state.lastResults.length, state.controllerUrl, state.roomCode || null]);
     const changed = this._sessionSig !== sig;
     this._sessionSig = sig;
     const keepLocal = this.session;
     this.session = state;
+    if (state && state.roomCode) this.roomCode = state.roomCode;
     if (!changed) {
       if (keepLocal && keepLocal.lastResults && !state.lastResults) state.lastResults = keepLocal.lastResults;
       this._updateTicker();
@@ -117,12 +128,17 @@ export class EventUI {
     const ready = teams.filter((t) => t.connected && t.ready).length;
     const connected = teams.filter((t) => t.connected).length;
     const canStart = connected > 0;
+    const roomCode = safeRoomCode(this.roomCode || s.roomCode);
+    // the QR must encode the room join URL — never double-append if a future
+    // server already put ?room= in controllerUrl
+    const joinUrl = withRoom(s.controllerUrl || '', roomCode);
     this.el.innerHTML = `
       <div class="ev-lobby">
         <div class="ev-left">
           <div class="ev-kicker">SCAN TO PLAY</div>
+          ${roomCode ? `<div class="ev-room" style="font-size:64px;font-weight:900;letter-spacing:10px;line-height:1;margin:6px 0 2px">ROOM ${roomCode}</div>` : ''}
           <canvas id="ev-qr" width="300" height="300"></canvas>
-          <div class="ev-url">${s.controllerUrl || ''}</div>
+          <div class="ev-url">${joinUrl}</div>
           ${s.lanWarning ? '<div class="ev-url warn">NO LAN IP FOUND — plug in Ethernet/hotspot, or type this URL on the phones</div>' : ''}
           ${s.altUrls && s.altUrls.length ? `<div class="ev-url alt">other interfaces: ${s.altUrls.join('  ')}</div>` : ''}
           <div class="ev-sub">${connected}/6 CONNECTED · ${ready} READY</div>
@@ -130,14 +146,17 @@ export class EventUI {
           <div class="ev-guide" aria-label="Host steps"><span>1 · TEAMS SCAN THE QR</span><span>2 · PICK RACER + READY (${ready}/6)</span><span>3 · PRESS CONTINUE</span></div>
           <button id="ev-start" class="btn primary big" ${canStart ? '' : 'disabled'}>${canStart ? 'CONTINUE → SETTINGS' : 'WAITING FOR TEAMS…'}</button>
           ${canStart ? '' : '<div class="ev-hint">Teams: scan the QR, pick a racer, tap READY on your phone.</div>'}
+          <button id="ev-newroom" class="btn ghost">NEW CODE</button>
           <button id="ev-solo" class="btn ghost">← SOLO MODE</button>
         </div>
         <div class="ev-slots">
           ${teams.map((t) => slotHtml(t)).join('')}
         </div>
       </div>`;
-    drawQr(this.el.querySelector('#ev-qr'), s.controllerUrl || '');
+    drawQr(this.el.querySelector('#ev-qr'), joinUrl);
     if (canStart) this.el.querySelector('#ev-start').onclick = () => this.h.goSettings();
+    const nr = this.el.querySelector('#ev-newroom');
+    if (nr) nr.onclick = () => { if (this.h.newRoom) this.h.newRoom(); };
     this.el.querySelector('#ev-solo').onclick = () => this.h.backToTitle();
     this.el.querySelectorAll('[data-act]').forEach((b) => b.onclick = () => this.h.lobbyAction(b.dataset.act, +b.dataset.team));
   }
@@ -356,6 +375,17 @@ function slotHtml(t) {
 }
 
 function ord(n) { return ['1st', '2nd', '3rd', '4th', '5th', '6th'][n - 1] || `${n}th`; }
+function safeRoomCode(v) {
+  if (v == null) return null;
+  const s = String(v).replace(/[^A-Za-z0-9]/g, '').slice(0, 8).toUpperCase();
+  return /^[A-HJ-KM-NP-Z2-9]{4}$/.test(s) ? s : null;
+}
+/** Append ?room=CODE (or &room=) unless the URL already carries it. Never double-appends. */
+function withRoom(base, code) {
+  if (!base || !code) return base;
+  if (base.includes('room=')) return base;
+  return base + (base.includes('?') ? '&' : '?') + 'room=' + code;
+}
 function preraceStatusText(racers) {
   const waiting = (racers || []).filter((t) => !t.connected && !t.ai).map((t) => t.name);
   return waiting.length ? `WAITING ON: ${waiting.join(', ')}` : 'ALL TEAMS IN — GOOD TO GO';

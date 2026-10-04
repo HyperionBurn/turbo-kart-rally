@@ -14,7 +14,113 @@ const state = {
   totalLaps: null, totalRaces: null, finalLapShown: false,
   itemJustUsed: null, itemUsedAt: 0, lowBattWarned: false,
   lastBoard: null, finishJingleKey: null,
+  room: null,
 };
+
+// ---------------- rooms (multi-household): ?room=CODE routes the socket.
+// TOKEN CHOICE (documented): the client keeps ONE stored token (tkr-token)
+// and always sends it. The server only honors that token inside the matching
+// room and otherwise treats the join as fresh, so per-room token stores would
+// add complexity for zero correctness gain. Switching rooms therefore forgets
+// NOTHING except the in-memory slot (teamId/sessionId/ready); name + token
+// stay in localStorage.
+const ROOM_KEY = 'tkr-room';
+function normalizeRoom(s) {
+  if (typeof s !== 'string') return null;
+  const c = s.trim().toUpperCase();
+  return /^[A-Z0-9]{4}$/.test(c) ? c : null;
+}
+function roomFromQuery() {
+  try {
+    return normalizeRoom(new URLSearchParams(location.search).get('room') || '');
+  } catch { return null; }
+}
+function rawRoomQuery() {
+  try { return new URLSearchParams(location.search).get('room'); }
+  catch { return null; }
+}
+function storedRoom() {
+  try { return normalizeRoom(localStorage.getItem(ROOM_KEY) || ''); }
+  catch { return null; }
+}
+function updateRoomChips() {
+  const txt = state.room ? `ROOM ${state.room}` : 'ROOM —';
+  for (const id of ['room-chip-join', 'room-chip-lobby', 'room-chip-race']) {
+    const el = $(id);
+    if (!el) continue;
+    el.textContent = txt;
+    // Join chip is only meaningful once a room is active; lobby/race chips
+    // stay persistently visible so a mid-event room switch is never hidden.
+    if (id === 'room-chip-join') el.hidden = !state.room;
+    else el.hidden = false;
+  }
+}
+function showRoomStep() {
+  const rs = $('room-step'), ns = $('name-step');
+  if (rs) rs.hidden = false;
+  if (ns) ns.hidden = false;
+  const sr = storedRoom();
+  const ri = $('room-input');
+  if (ri && !ri.value && sr) ri.value = sr;
+  const rj = $('room-rejoin-btn');
+  if (rj) {
+    if (sr) {
+      rj.hidden = false;
+      rj.textContent = `Last room: ${sr} · tap to rejoin`;
+    } else rj.hidden = true;
+  }
+  updateRoomChips();
+}
+function showNameStep() {
+  const rs = $('room-step'), ns = $('name-step');
+  if (ns) ns.hidden = false;
+  // QR path skips the code entry: room is already resolved, so hide the
+  // room step and land straight on name entry with zero extra taps.
+  if (rs) rs.hidden = !!state.room;
+  if (!state.room) showRoomStepKeepName();
+  updateRoomChips();
+}
+function showRoomStepKeepName() {
+  const rs = $('room-step'), ns = $('name-step');
+  if (rs) rs.hidden = false;
+  if (ns) ns.hidden = false;
+}
+function setRoom(code, opts) {
+  const norm = normalizeRoom(code || '');
+  if (!norm) return null;
+  state.room = norm;
+  try { localStorage.setItem(ROOM_KEY, norm); } catch {}
+  const ri = $('room-input');
+  if (ri) ri.value = norm;
+  const st = $('room-status');
+  if (st && !(opts && opts.silent)) { st.textContent = `Room ${norm} set — enter your team name.`; st.className = 'status ok'; }
+  const rj = $('room-rejoin-btn');
+  if (rj) { rj.hidden = false; rj.textContent = `Last room: ${norm} · tap to rejoin`; }
+  showNameStep();
+  try { $('name-input') && $('name-input').focus({ preventScroll: true }); } catch {}
+  return norm;
+}
+// Tapping a ROOM chip returns to code entry to switch rooms: clear ONLY the
+// in-memory slot (teamId/sessionId/ready + socket), keep name + token.
+function switchRooms() {
+  state.teamId = 0; state.sessionId = 0; state.ready = false;
+  state.room = null;
+  suppressReconnect = true;
+  try { state.ws && state.ws.close(); } catch {}
+  suppressReconnect = false;
+  setConn('idle', 'Pick a room code to switch rooms.');
+  showView('join');
+  showRoomStepKeepName();
+  const rs = $('room-status');
+  if (rs) { rs.textContent = 'Enter a room code (or tap your last room).'; rs.className = 'status'; }
+  updateRoomChips();
+  const sr = storedRoom();
+  const ri = $('room-input');
+  if (ri) {
+    if (sr) ri.value = sr;
+    try { ri.focus({ preventScroll: true }); } catch {}
+  }
+}
 const log = new LinkStats();
 const clock = new ClockSync();
 let seq = 0;
@@ -28,7 +134,9 @@ function connect() {
   ws.onopen = () => {
     reconnectAttempts = 0;
     suppressReconnect = false;
-    ws.send(JSON.stringify({ type: 'join', token: state.token, name: state.name }));
+    const payload = { type: 'join', token: state.token, name: state.name };
+    if (state.room) payload.room = state.room;
+    ws.send(JSON.stringify(payload));
   };
   ws.onmessage = (e) => {
     if (typeof e.data !== 'string') return;
@@ -577,9 +685,38 @@ function showView(name) {
 
 // A phone that already owns a slot reclaims it automatically on reload: the same
 // team, the same screen, no re-typing the name.
+// Room-aware: a QR (?room=CODE) or a stored last-room code never auto-joins
+// blind — the user always confirms the room first, then JOIN reclaims/fresh-joins.
 function autoResume() {
-  if (!state.token) { showView('join'); return; }
+  const qr = roomFromQuery();
+  if (qr) {
+    state.room = qr;
+    try { localStorage.setItem(ROOM_KEY, qr); } catch {}
+    showView('join');
+    showNameStep();
+    return;
+  }
+  const raw = rawRoomQuery();
+  if (raw != null && raw !== '') {
+    // Invalid ?room=: show the code entry, never join blind.
+    showView('join');
+    showRoomStep();
+    const st = $('room-status');
+    if (st) { st.textContent = 'That room code looks wrong — enter the 4-character code.'; st.className = 'status err'; }
+    return;
+  }
+  const sr = storedRoom();
+  if (sr) {
+    // Last room known: show code entry with prefill + one-tap rejoin.
+    // No auto-connect here, so "no query shows code entry" holds even with a token.
+    showView('join');
+    showRoomStep();
+    return;
+  }
+  if (!state.token) { showView('join'); showRoomStepKeepName(); updateRoomChips(); return; }
   showView('join');
+  showRoomStepKeepName();
+  updateRoomChips();
   $('join-status').textContent = 'Reclaiming your slot…';
   connect();
 }
@@ -674,8 +811,56 @@ $('ready-btn').addEventListener('pointerdown', (e) => {
 });
 $('name-input').value = state.name;
 $('forget-btn').hidden = !state.token;
+// Room-code entry wiring (new IDs only; existing join IDs untouched).
+(function initRooms() {
+  const ri = $('room-input'), rj = $('room-join-btn'), rr = $('room-rejoin-btn');
+  if (ri) {
+    ri.addEventListener('input', () => {
+      const pos = ri.selectionStart;
+      ri.value = (ri.value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+      try { ri.setSelectionRange(pos, pos); } catch {}
+    });
+    ri.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); doRoomJoin(); }
+    });
+  }
+  function doRoomJoin() {
+    const norm = normalizeRoom(($('room-input') || {}).value || '');
+    const st = $('room-status');
+    if (!norm) {
+      if (st) { st.textContent = 'Enter the 4-character room code from the host screen.'; st.className = 'status err'; }
+      buzz(60);
+      return;
+    }
+    setRoom(norm);
+    buzz(10);
+  }
+  if (rj) rj.addEventListener('click', (e) => { e.preventDefault(); doRoomJoin(); });
+  if (rr) rr.addEventListener('click', (e) => {
+    e.preventDefault();
+    const sr = storedRoom();
+    if (sr) setRoom(sr, { silent: true });
+    buzz(10);
+  });
+  for (const id of ['room-chip-join', 'room-chip-lobby', 'room-chip-race']) {
+    const el = $(id);
+    if (el) el.addEventListener('click', (e) => { e.preventDefault(); switchRooms(); });
+  }
+})();
 autoResume();
 function doJoin() {
+  // Frictionless-room guard: a valid code typed into the room box but never
+  // confirmed via JOIN WITH CODE still routes correctly (never joins default blind).
+  if (!state.room) {
+    try {
+      const typed = normalizeRoom(($('room-input') || {}).value || '');
+      if (typed) {
+        state.room = typed;
+        try { localStorage.setItem(ROOM_KEY, typed); } catch {}
+        updateRoomChips();
+      }
+    } catch {}
+  }
   state.name = $('name-input').value.trim().slice(0, 14) || state.name;
   $('name-input').value = state.name;
   localStorage.setItem('tkr-name', state.name);
@@ -852,4 +1037,4 @@ function applyHowto() {
 
 // Light-verification hook: lets a single test page dispatch synthetic inbound
 // messages and call the pure helpers without touching the network.
-window.__tkr = { state, onMessage, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, renderBoard, playFinishJingle, setItemHeld, maybeBattWarn, buzz, beep, hapticsOn, soundOn, applyHand, applyHowto, applyPrefToggles, onFlowChange, updateRocketHint, updateWrongWay, updateRaceLines, syncItemHint, renderChars, renderDetail, charTag, statNum };
+window.__tkr = { state, onMessage, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, renderBoard, playFinishJingle, setItemHeld, maybeBattWarn, buzz, beep, hapticsOn, soundOn, applyHand, applyHowto, applyPrefToggles, onFlowChange, updateRocketHint, updateWrongWay, updateRaceLines, syncItemHint, renderChars, renderDetail, charTag, statNum, normalizeRoom, roomFromQuery, storedRoom, setRoom, switchRooms, updateRoomChips, showRoomStep, showNameStep, ROOM_KEY };

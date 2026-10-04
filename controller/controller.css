@@ -49,6 +49,27 @@ h1 { font-size: clamp(26px, 6vw, 34px); margin: 0; letter-spacing: 2px; text-ali
 .join-row { min-height: 24px; }
 .linklike { background: none; border: 0; color: #9fb0e8; text-decoration: underline; font-size: 13px; padding: 6px 10px; }
 .linklike[hidden] { display: none; }
+/* ---- room-code entry (multi-household): room-step sits BEFORE name-step ---- */
+#room-step, #name-step { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
+#room-step[hidden], #name-step[hidden] { display: none; }
+#room-input { text-transform: uppercase; font-weight: 900; }
+#room-join-btn { margin-top: 4px; }
+#room-rejoin-btn { max-width: 92vw; white-space: normal; }
+#room-status { min-height: 1.2em; margin: 4px 0 0; text-align: center; font-size: 14px; }
+#room-status.ok { color: #69f0ae; }
+#room-status.warn { color: #ffd54f; }
+#room-status.err { color: #ff8a80; }
+/* ---- persistent ROOM chip: join + lobby + race headers ---- */
+.room-chip {
+  font-size: 11px; font-weight: 900; letter-spacing: 2px;
+  padding: 6px 12px; border-radius: 999px;
+  background: rgba(253, 216, 53, .1); border: 1px solid #fdd835; color: #fdd835;
+  white-space: nowrap;
+}
+.room-chip[hidden] { display: none; }
+#room-chip-lobby { flex: none; }
+#room-chip-race { pointer-events: auto; font-size: 11px; padding: 6px 10px; }
+#room-chip-join { margin-bottom: 2px; }
 input {
   width: min(80vw, 340px); padding: 14px 16px; font-size: 20px; letter-spacing: 2px; text-align: center;
   border-radius: 12px; border: 2px solid #2a3050; background: #141a33; color: #fff; margin-bottom: 6px;
