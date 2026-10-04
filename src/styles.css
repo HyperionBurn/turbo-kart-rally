@@ -82,6 +82,8 @@ button { font: inherit; color: inherit; }
 
 /* ---- title */
 .title-screen { display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+.pad-status { margin-top: 10px; font-size: 14px; letter-spacing: 1px; color: #9fb0e8; z-index: 2; min-height: 1.2em; text-align: center; padding: 0 16px; }
+.sel-header .pad-status, .select-screen .pad-status { margin-top: 2px; }
 .title-cta { display: flex; gap: 14px; margin-top: 10px; z-index: 2; }
 .title-cta .btn { cursor: pointer; }
 .title-hint { margin-top: 12px; font-size: 13px; letter-spacing: 1px; color: #8892b0; z-index: 2; }

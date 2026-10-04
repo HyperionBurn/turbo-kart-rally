@@ -91,18 +91,39 @@ The orchestrating agent wrote an architecture contract first ([ARCHITECTURE.md](
 
 ## Controls
 
-| Action | Keyboard | Gamepad |
+| Action | Keyboard | Gamepad (Xbox / PlayStation) |
 | --- | --- | --- |
-| Accelerate | W or Up | A or right trigger |
-| Brake / reverse | S or Down | B or left trigger |
-| Steer | A and D, or Left and Right | Left stick |
-| Hop / drift | Space | RB or X |
-| Use item | E, X or Left Shift | LB or Y |
+| Accelerate | W or Up | A / ✕, or right trigger |
+| Brake / reverse | S or Down | B / ○, or left trigger |
+| Steer | A and D, or Left and Right | Left stick (D-pad works too) |
+| Hop / drift | Space | RB / R1, or X / □ |
+| Use item | E, X or Left Shift | LB / L1, or Y / △ |
 | Look back | C | Click either stick |
-| Pause | Esc or P | Start |
+| Pause | Esc or P | Start / Options |
 | Mute | M | |
 
 Hold drift through a corner. Sparks turn blue, then orange, then purple. Release for a bigger boost the longer you held it. Hold accelerate as the countdown reaches GO for a rocket start.
+
+## Bluetooth controllers (Xbox / PlayStation)
+
+Any XInput or standard-mapping pad works over USB **and** Bluetooth — no drivers,
+no setup. On the laptop: pair the controller in the OS Bluetooth settings first
+(Xbox: hold the pair button until the logo blinks; DualShock 4: hold PS + Share;
+DualSense: hold PS + Create), then open the game in Chrome or Edge.
+
+- The title screen names your pad (`Xbox Wireless Controller`, `DualSense
+  controller`, …) with its own button labels, and the gamepad rumbles on hits,
+  boosts, countdowns and finishes (Xbox One+, DualSense; silently skipped
+  elsewhere — rumble never blocks input).
+- Press **START on the controller you want** if several are connected; the game
+  follows the most recently used pad and falls back gracefully on disconnect.
+- The solo HUD toasts connects/disconnects mid-session.
+- Troubleshooting: no response at all → press any button once (some Bluetooth
+  stacks sleep pads until first input) and use Chrome/Edge (best mapping +
+  rumble support); double driving / phantom input → disconnect the duplicate
+  pad in OS Bluetooth settings; wrong buttons → your browser reports a
+  non-standard mapping (console warning) — keyboard still works fine; iPhone
+  browsers don't expose gamepads at all — phones use the touch controller.
 
 ## Run it locally
 

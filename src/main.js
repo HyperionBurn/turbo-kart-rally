@@ -757,6 +757,28 @@ bus.on('race:finalLap', () => {
   flashEventBanner('FINAL LAP!');
 });
 
+// ---------------------------------------------------------------------------------------------
+// Gamepad hot-plug UX + event rumble (solo mode only; latest effect wins by design).
+// ---------------------------------------------------------------------------------------------
+function padRumble(opts) { try { if (input) input.rumble(opts); } catch {} }
+function soloPlayerKart(d) {
+  return (world && world.mode === 'race' && world.player && d && d.kart === world.player) ? world.player : null;
+}
+bus.on('gamepad:connected', (d = {}) => {
+  safe('pad.toast', () => hud.toast(d.label ? `${d.label} connected` : 'Controller connected'));
+  try { audio.beep(740, 0.09, 'square', 0.1); } catch {}
+});
+bus.on('gamepad:disconnected', () => {
+  safe('pad.toast', () => hud.toast('Controller disconnected — keyboard ready'));
+});
+bus.on('kart:hit', (d) => { if (soloPlayerKart(d)) padRumble({ strong: 0.9, weak: 0.7, duration: 300 }); });
+bus.on('kart:miniTurbo', (d) => { if (soloPlayerKart(d)) padRumble({ strong: 0.35, weak: 0.6, duration: 160 + 60 * ((d && d.level) || 1) }); });
+bus.on('kart:boost', (d) => { if (d && d.source !== 'miniTurbo' && soloPlayerKart(d)) padRumble({ strong: 0.5, weak: 0.5, duration: 220 }); });
+bus.on('item:use', (d) => { if (soloPlayerKart(d)) padRumble({ strong: 0.3, weak: 0.3, duration: 120 }); });
+bus.on('race:countdown', () => { if (world && world.mode === 'race') padRumble({ strong: 0.25, weak: 0.25, duration: 70 }); });
+bus.on('race:go', () => { if (world && world.mode === 'race') padRumble({ strong: 0.5, weak: 0.5, duration: 180 }); });
+bus.on('race:finish', (d) => { if (soloPlayerKart(d)) padRumble({ strong: 0.8, weak: 0.6, duration: 450 }); });
+
 /** F1-style start lights for the event countdown (and a rocket start if you hold GAS). */
 const startLights = { el: null, set(n) {
   if (!this.el) { this.el = document.createElement('div'); this.el.className = 'start-lights'; uiRoot.appendChild(this.el); }

@@ -1,6 +1,7 @@
 // Title screen, character select (with difficulty / laps options + controls help), pause menu, gamepad navigation.
 import { bus } from './events.js';
 import { CHARACTERS, GAME_TITLE } from './config.js';
+import { updatePadPresence, padHint } from './input.js';
 
 const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0').slice(-6);
 const DIFFS = ['easy', 'normal', 'hard'];
@@ -25,7 +26,8 @@ const CONTROLS_HTML = `
   <div class="ctl"><span class="kc">E</span><span class="kc">X</span><span class="kc wide">L-SHIFT</span> Use item</div>
   <div class="ctl"><span class="kc">C</span> Look back</div>
   <div class="ctl"><span class="kc wide">ESC</span><span class="kc">P</span> Pause</div>
-  <div class="ctl"><span class="kc">M</span> Mute</div>`;
+  <div class="ctl"><span class="kc">M</span> Mute</div>
+  <div class="ctl"><span class="kc wide">PAD</span> Stick steer · bottom button gas · right button brake</div>`;
 
 export class Menu {
   constructor(uiRoot, handlers = {}) {
@@ -89,6 +91,7 @@ export class Menu {
         <div class="logo-swoosh"></div>
       </div>
       <div class="press-start">PRESS ENTER / CLICK TO START</div>
+      <div class="pad-status" data-pad-status></div>
       <div class="title-cta">
         <button class="btn primary big" id="btn-event">EVENT MODE · 6 PLAYERS</button>
         <button class="btn big" id="btn-solo">SOLO MODE</button>
@@ -107,6 +110,7 @@ export class Menu {
     const s = this.selectEl = el('div', 'screen select-screen', this.uiRoot);
     s.innerHTML = `
       <div class="sel-header"><div class="sel-title">CHOOSE YOUR RACER</div><div class="sel-back">ESC · BACK</div></div>
+      <div class="pad-status" data-pad-status></div>
       <div class="sel-body">
         <div class="sel-grid"></div>
         <div class="sel-side">
@@ -271,6 +275,17 @@ export class Menu {
     } catch (e) { return 2; }
   }
   _refreshPause() { this.pauseBtns.forEach((b, i) => b.classList.toggle('focus', i === this.pauseIndex)); }
+
+  /** One-line controller readout on title/select. Change-detected; never throws. */
+  _refreshPadStatus(info) {
+    const text = info && info.label ? `🎮 ${info.label} · ${padHint(info.type)}` : 'Keyboard ready — connect a controller anytime';
+    if (text === this._padStatusText) return;
+    this._padStatusText = text;
+    try {
+      const els = this.uiRoot.querySelectorAll('[data-pad-status]');
+      for (const el of els) el.textContent = text;
+    } catch {}
+  }
   _pauseAct(a) {
     if (this.screen !== 'pause') return;
     bus.emit('ui:confirm');
@@ -327,9 +342,12 @@ export class Menu {
   /** Poll gamepads; translate to synthetic key presses for menus (and Start -> Escape for pause). */
   update(dt, gameState) {
     this.gameState = gameState;
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     let gp = null;
-    for (const p of pads || []) if (p && p.connected) { gp = p; break; }
+    try {
+      const sel = updatePadPresence();
+      gp = sel.pad;
+      this._refreshPadStatus(sel.info);
+    } catch (e) { gp = null; }
     if (!gp) return;
     const b = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
     const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;

@@ -1,7 +1,11 @@
 // Player input: keyboard (KEYS from config, by event.code) + Gamepad API.
+// Supports Xbox (XInput) and PlayStation (DualShock 4 / DualSense) over USB and
+// Bluetooth: Chrome/Edge map both to the 'standard' layout, so button indices
+// are identical and only the human-readable labels differ.
 // getInput() returns the kart.input shape; `item` is edge-triggered (true for one frame per press).
 // consumePressed(action) returns true exactly once per press (keyboard or gamepad).
 import { KEYS } from './config.js';
+import { bus } from './events.js';
 
 // Extra UI actions (menus may use these); gameplay actions come from KEYS.
 const EXTRA_KEYS = {
@@ -36,6 +40,105 @@ const STICK_DEADZONE = 0.18;
 const STEER_RAMP_TIME = 0.08;   // seconds from 0 -> full lock on keyboard
 const STEER_RELEASE_TIME = 0.06;
 
+// ---------------------------------------------------------------------------------------------
+// Gamepad identity + selection. Several pads can be connected at once (a phantom Bluetooth
+// entry next to the real one is common); we drive from exactly one: the manual override if
+// it is still connected, else the pad with the most recent activity, else the lowest index.
+// Pressing START on any connected pad steals selection ("press START to take over").
+// Presence diffs emit gamepad:connected / gamepad:disconnected on the bus.
+// ---------------------------------------------------------------------------------------------
+function shortPadLabel(s, fallback) {
+  const m = /^([^()]+)/.exec(String(s || '').trim());
+  const name = (m && m[1].trim()) || '';
+  if (!name) return fallback;
+  return name.length > 34 ? name.slice(0, 33) + '…' : name;
+}
+
+/** Classify a Gamepad API id string. Never throws; unknown ids -> generic. */
+export function identifyGamepad(id) {
+  const s = String(id || '');
+  if (/xbox|045e|xinput/i.test(s)) return { type: 'xbox', label: shortPadLabel(s, 'Xbox controller') };
+  if (/dualsense/i.test(s)) return { type: 'playstation', label: 'DualSense controller' };
+  if (/054c|sony|dualshock|wireless controller/i.test(s)) return { type: 'playstation', label: /dualshock/i.test(s) ? 'DualShock 4 controller' : 'PlayStation controller' };
+  if (/057e|nintendo|switch|pro controller|joy-con/i.test(s)) return { type: 'switch', label: shortPadLabel(s, 'Switch controller') };
+  return { type: 'generic', label: shortPadLabel(s, 'Gamepad') };
+}
+
+/** Short per-brand control hint for menus. */
+export function padHint(type) {
+  if (type === 'playstation') return '✕ gas · ○ brake · △/□ item · R1 drift';
+  if (type === 'xbox') return 'A gas · B brake · Y/LB item · RB drift';
+  if (type === 'switch') return 'B gas · A brake · X/Y item · R drift';
+  return 'bottom gas · right brake · bumpers drift/item';
+}
+
+let padOverride = -1;              // manual selection, -1 = automatic
+let lastActivePad = -1;
+const knownPads = new Map();       // index -> id (presence diffing)
+const prevStart = new Map();       // index -> START held last poll (takeover edges)
+
+/** All currently connected pads with their slot index. Never throws. */
+export function listGamepads() {
+  let pads = null;
+  try { pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : null; } catch { pads = null; }
+  const out = [];
+  if (pads) for (let i = 0; i < pads.length; i++) {
+    const p = pads[i];
+    if (p && p.connected !== false) out.push({ index: i, pad: p });
+  }
+  return out;
+}
+
+export function selectGamepad(i) { padOverride = i | 0; }
+export function clearGamepadSelection() { padOverride = -1; }
+
+/**
+ * Poll presence, run connect/disconnect diffs, apply START-takeover, and return
+ * the selected pad (or null). Called once per frame from gameplay + menu polling;
+ * cheap and idempotent — the second call in a frame is a no-op for edges.
+ */
+export function updatePadPresence() {
+  const list = listGamepads();
+  const seen = new Set();
+  for (const { index, pad } of list) {
+    seen.add(index);
+    const id = pad.id || '';
+    if (!knownPads.has(index) || knownPads.get(index) !== id) {
+      knownPads.set(index, id);
+      const info = identifyGamepad(id);
+      try { bus.emit('gamepad:connected', { index, id, ...info, mapping: pad.mapping || '' }); } catch {}
+    }
+    // START on any pad steals selection mid-frame-safe: edge-triggered per index.
+    let start = false;
+    try { const b = pad.buttons && pad.buttons[GP.START]; start = !!(b && (b.pressed || b.value > 0.5)); } catch { start = false; }
+    if (start && !prevStart.get(index)) {
+      lastActivePad = index;
+      if (padOverride !== -1 && padOverride !== index) padOverride = -1; // manual yields to a live human
+    }
+    prevStart.set(index, start);
+  }
+  for (const [index, id] of [...knownPads]) {
+    if (!seen.has(index)) {
+      knownPads.delete(index);
+      prevStart.delete(index);
+      if (padOverride === index) padOverride = -1;
+      if (lastActivePad === index) lastActivePad = -1;
+      try { bus.emit('gamepad:disconnected', { index, id }); } catch {}
+    }
+  }
+  let pick = -1;
+  if (padOverride !== -1 && seen.has(padOverride)) pick = padOverride;
+  else if (lastActivePad !== -1 && seen.has(lastActivePad)) pick = lastActivePad;
+  else if (list.length) pick = list[0].index;
+  if (pick === -1) return { pad: null, index: -1, info: null };
+  const entry = list.find((e) => e.index === pick);
+  const pad = entry ? entry.pad : null;
+  if (!pad) return { pad: null, index: -1, info: null };
+  return { pad, index: pick, info: identifyGamepad(pad.id) };
+}
+
+function clamp01(v) { v = +v || 0; return v < 0 ? 0 : v > 1 ? 1 : v; }
+
 function isTypingTarget(el) {
   if (!el) return false;
   const tag = el.tagName;
@@ -57,6 +160,10 @@ export class InputController {
     this.gpThrottle = 0;
     this.gpBrake = 0;
     this.gamepadConnected = false;
+    this.padIndex = -1;              // selected gamepad slot, -1 = none
+    this.padInfo = null;             // identifyGamepad() result for the selected pad
+    this.nonStandardMapping = false; // true when the pad doesn't report 'standard' layout
+    this._warnedMapping = false;
     this.lastDevice = 'keyboard';
     this.steer = 0;
     this._lastTime = now();
@@ -112,11 +219,16 @@ export class InputController {
     const t = now();
     if (t === this._lastPoll) return;
     this._lastPoll = t;
-    let pads = null;
-    try { pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : null; } catch { pads = null; }
-    let pad = null;
-    if (pads) for (const p of pads) { if (p && p.connected !== false) { pad = p; break; } }
+    const { pad, index, info } = updatePadPresence();
     this.gamepadConnected = !!pad;
+    this.padIndex = index;
+    this.padInfo = info;
+    const mapping = pad ? (pad.mapping || '') : '';
+    if (pad && mapping !== 'standard' && !this._warnedMapping) {
+      this._warnedMapping = true;
+      try { console.warn(`[input] non-standard gamepad mapping (${mapping || 'unknown'}); buttons may differ by brand`); } catch {}
+    }
+    this.nonStandardMapping = !!pad && mapping !== 'standard';
     const held = this.gpHeld;
     for (const a in GP_ACTIONS) held[a] = false;
     this.gpSteer = 0; this.gpThrottle = 0; this.gpBrake = 0;
@@ -171,6 +283,36 @@ export class InputController {
   peekThrottle() {
     this._pollGamepad();
     return Math.max(this._keyHeld('accelerate') ? 1 : 0, this.gpThrottle);
+  }
+
+  /** True when the selected pad exposes actuator rumble (Xbox One+, DualSense, ...). */
+  rumbleSupported() {
+    try {
+      const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : null;
+      const pad = pads && this.padIndex >= 0 ? pads[this.padIndex] : null;
+      return !!(pad && pad.connected !== false && pad.vibrationActuator && typeof pad.vibrationActuator.playEffect === 'function');
+    } catch { return false; }
+  }
+
+  /**
+   * Fire a rumble pulse on the selected pad. Latest effect wins (correct for
+   * rumble: a hit should cut through a boost buzz). No-op + false when the
+   * pad, browser, or connection can't do it. Never throws.
+   */
+  rumble({ strong = 0.6, weak = 0.4, duration = 200 } = {}) {
+    try {
+      const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : null;
+      const pad = pads && this.padIndex >= 0 ? pads[this.padIndex] : null;
+      const act = pad && pad.connected !== false && pad.vibrationActuator;
+      if (!act || typeof act.playEffect !== 'function') return false;
+      const p = act.playEffect('dual-rumble', {
+        duration: Math.max(0, Math.min(2000, duration | 0)),
+        strongMagnitude: clamp01(strong),
+        weakMagnitude: clamp01(weak),
+      });
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+      return true;
+    } catch { return false; }
   }
 
   getInput() {

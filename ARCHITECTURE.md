@@ -220,6 +220,7 @@ race:countdown {n} Â· race:go Â· race:lap {kart, lap} Â· race:finalLap Â�
 kart:driftStart Â· kart:driftLevel Â· kart:driftEnd Â· kart:miniTurbo Â· kart:boost Â· kart:hit Â· kart:wallBump Â· kart:jump Â· kart:land Â· kart:bump
 item:pickup Â· item:roulette Â· item:got Â· item:use Â· item:hit Â· item:explode Â· item:lightning
 game:state {state}  ('title'|'select'|'intro'|'countdown'|'racing'|'finished'|'paused')
+gamepad:connected {index, id, type, label, mapping} · gamepad:disconnected {index, id}
 
 ---
 
