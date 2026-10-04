@@ -1,5 +1,9 @@
 # Playing over the internet (every household)
 
+Live right now: **https://turbo-kart-rally-mstb.onrender.com**
+(Render service `turbo-kart-rally`, Singapore, free plan, auto-deploys from
+`six-player-party-racer`. Open it on the laptop, phones scan the QR.)
+
 The same codebase runs both ways with zero code changes:
 
 - **Same Wi-Fi (party mode):** `npm start` on the laptop, phones scan the QR.
