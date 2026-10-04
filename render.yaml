@@ -1,0 +1,15 @@
+# Render Blueprint — Turbo Kart Rally event server.
+# One-click deploy: Render Dashboard → New → Blueprint → point at this repo.
+# Each household deploys its own service; the service URL is the private lobby
+# (only people with the link can join — treat it like a room code).
+services:
+  - type: web
+    name: turbo-kart-rally
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server/server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 24.18.0

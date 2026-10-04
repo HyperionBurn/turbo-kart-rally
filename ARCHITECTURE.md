@@ -244,6 +244,12 @@ PHONE 1..6 â”€â”€Wi-Fi/LANâ”€â”€> LOCAL SERVER (server/serve
 - The server is authoritative for lobby state; the host page mirrors it and sends control
   messages (`hostFlow`, `hostSettings`, `hostRemove`, `hostForceReady`, `hostReplaceAI`,
   `hostApplyResults`, `hostResetSession`).
+- **Internet households:** the same server runs unchanged on Render (see `render.yaml` +
+  `DEPLOY_RENDER.md`). The lobby's controller URL is derived per-connection from the
+  `Host` header the host page arrived on — a public origin yields
+  `https://<host>/controller` (wss is automatic on https), a LAN origin yields the LAN
+  URL, and `localhost` never leaks into a QR. Each household deploys its own service,
+  so one global room per deployment is all that's needed.
 
 ## 6.2 Modules
 

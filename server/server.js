@@ -100,10 +100,26 @@ function publicTeam(t) {
 }
 function broadcast(fn) { for (const c of allClients()) fn(c); }
 function allClients() { const out = []; if (hostWs) out.push(hostWs); for (const t of teams) if (t.ws) out.push(t.ws); for (const s of spectators) out.push(s); for (const d of diagSockets) out.push(d); return out; }
-/** Addresses phones should actually use — the LAN IP, never localhost. */
-function netInfo() {
+/** Addresses phones should actually use — the LAN IP, never localhost.
+ * When the host page itself arrives via a public origin (Render/cloud deploy),
+ * the QR must encode that public origin (https, no internal port), because the
+ * server's LAN interfaces are meaningless to phones on other networks. */
+function isPublicHost(host) {
+  const h = String(host || '').split(':')[0].toLowerCase();
+  if (!h) return false;
+  if (h === 'localhost' || h === '[::1]' || h === '::1') return false;
+  if (/^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)) return false;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return false;
+  if (/\.local$|\.lan$|\.home$|\.internal$/.test(h)) return false;
+  return true;
+}
+function netInfo(hostHeader) {
   const ips = lanIps();
-  return { port: activePort, ips, controllerUrl: ips.length ? `http://${ips[0]}:${activePort}/controller` : null };
+  if (isPublicHost(hostHeader)) {
+    const host = String(hostHeader).split(':')[0];
+    return { port: activePort, ips, public: true, controllerUrl: `https://${host}/controller` };
+  }
+  return { port: activePort, ips, public: false, controllerUrl: ips.length ? `http://${ips[0]}:${activePort}/controller` : null };
 }
 function spectatorCount() { let n = 0; for (const s of spectators) { try { if (s && s.readyState === 1) n++; } catch {} } return n; }
 function lobbyState() {
@@ -154,6 +170,11 @@ const server = http.createServer((req, res) => {
   const u = decodeURIComponent(req.url.split('?')[0]);
   let file;
   if (u === '/' ) file = 'index.html';
+  else if (u === '/healthz') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ ok: true, flow: session.flow, teams: teams.filter((t) => t.connected).length }));
+    return;
+  }
   else if (u === '/debug/slots') {
     res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ flow: session.flow, raceIndex: session.raceIndex, scores: session.scores, slots: teams.map((t) => ({ id: t.id, name: t.name, connected: t.connected, sessionId: t.sessionId, token: t.reconnectToken, ai: t.ai })) }));
@@ -174,6 +195,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, path: '/ws', perMessageDeflate: false, clientTracking: true });
 wss.on('connection', (ws, req) => {
   ws._role = null;
+  try { ws._host = (req && req.headers && req.headers.host) || ''; } catch { ws._host = ''; }
   try { ws._socket.setNoDelay(true); } catch {}
   ws.on('message', (data, isBinary) => {
     if (isBinary) { relayBinary(data, ws); return; }
@@ -188,10 +210,10 @@ function handleJson(ws, m) {
   try {
   switch (m && m.type) {
     case 'diagHello': ws._role = 'diag'; diagSockets.add(ws);
-      send(ws, { type: 'session', state: session, net: netInfo() }); broadcastLobby(); break;
+      send(ws, { type: 'session', state: session, net: netInfo(ws._host) }); broadcastLobby(); break;
     case 'hostHello': {
       ws._role = 'host'; hostWs = ws;
-      send(ws, { type: 'session', state: session, net: netInfo() });
+      send(ws, { type: 'session', state: session, net: netInfo(ws._host) });
       broadcastLobby();
       break;
     }
@@ -328,7 +350,7 @@ function onClose(ws) {
 function hostAction(action) {
   if (action === 'startRace') { session.flow = 'racing'; persist(); pushSession(); broadcastLobby(); }
 }
-function pushSession() { send(hostWs, { type: 'session', state: session, net: netInfo() }); }
+function pushSession() { send(hostWs, { type: 'session', state: session, net: hostWs ? netInfo(hostWs._host) : netInfo('') }); }
 function applyResults(results) {
   // results: [{teamId, place}]
   // raceIndex semantics (six-player-party-racer): `finishedIndex` below is the

@@ -19,6 +19,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/bridge-mind/turbo-kart-rally/issues"
