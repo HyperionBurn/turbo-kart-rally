@@ -90,6 +90,8 @@ export class AudioEngine {
 
     this.musicGain = ctx.createGain(); this.musicGain.gain.value = 0.42; this.musicGain.connect(this.master);
     this.sfxGain = ctx.createGain(); this.sfxGain.gain.value = 0.9; this.sfxGain.connect(this.master);
+    // event-mode submix: six phone players' gameplay sounds share one speaker, a bit quieter
+    this.eventSfx = ctx.createGain(); this.eventSfx.gain.value = 0.55; this.eventSfx.connect(this.sfxGain);
 
     // shared noise buffer (2 s)
     const len = ctx.sampleRate * 2;
@@ -131,24 +133,49 @@ export class AudioEngine {
   _subscribe() {
     const on = (n, f) => this._offs.push(bus.on(n, (d) => { if (this.ctx) { try { f(d || {}); } catch (e) { console.warn('[audio]', n, e); } } }));
     const isP = (k) => k && k.isPlayer;
+    // Event mode has no "player" kart, so gameplay sounds gated on isP() were all silent on the
+    // big screen (no drift sparks, boosts, bumps, jumps, items, laps). Play them for every
+    // human-driven kart through the quieter event submix, rate-limited per sound so six
+    // players stay readable instead of a wall of noise. AI karts stay quiet.
+    const GAP = { spark: 0.09, whoosh: 0.12, thud: 0.1, bump: 0.12, boing: 0.15, land: 0.12, chime: 0.1, got: 0.1, throw: 0.08, hitConfirm: 0.1, lap: 0.25, finish: 0.35 };
+    const last = {};
+    const human = (k) => k && !k.isPlayer && k.teamId > 0 && !k._ai;
+    const forKart = (k, key, fn) => {
+      if (isP(k)) { fn(); return; }
+      if (!human(k) || !this.gameplay) return;
+      const now = this.ctx.currentTime;
+      if (now - (last[key] || -1) < (GAP[key] || 0.1)) return;
+      last[key] = now;
+      this._route = this.eventSfx;
+      try { fn(); } finally { this._route = null; }
+    };
     on('race:countdown', (d) => { const n = d && d.n; const f = { 3: 440, 2: 587, 1: 740 }[n] || 440; this.beep(f, 0.18, 'square', 0.22); });
     on('race:go', () => { this.beep(880, 0.55, 'square', 0.24); this.beep(1760, 0.4, 'sine', 0.08); });
-    on('race:lap', (d) => { if (isP(d.kart)) this.lapChime(); });
+    on('race:lap', (d) => forKart(d.kart, 'lap', () => this.lapChime()));
     on('race:finalLap', () => { this.finalLapJingle(); this.tempoScale = 1.12; });
-    on('race:finish', (d) => { if (isP(d.kart)) { this.fanfare(d.place); } });
-    on('kart:driftLevel', (d) => { if (isP(d.kart) && d.level > 0) this.sparkTick(d.level); });
-    on('kart:miniTurbo', (d) => { if (isP(d.kart)) this.whoosh(0.3 + 0.15 * (d.level || 1), 1 + 0.2 * (d.level || 1)); });
-    on('kart:boost', (d) => { if (isP(d.kart) && d.source !== 'miniTurbo') this.whoosh(0.6, 1); });
+    on('race:finish', (d) => {
+      if (isP(d.kart)) { this.fanfare(d.place); return; }
+      // event: the winner gets the fanfare, everyone after a short chime (six fanfares pile up)
+      forKart(d.kart, 'finish', () => (d.place === 1 ? this.fanfare(1) : this.lapChime()));
+    });
+    on('kart:driftLevel', (d) => { if (d.level > 0) forKart(d.kart, 'spark', () => this.sparkTick(d.level)); });
+    on('kart:miniTurbo', (d) => forKart(d.kart, 'whoosh', () => this.whoosh(0.3 + 0.15 * (d.level || 1), 1 + 0.2 * (d.level || 1))));
+    on('kart:boost', (d) => { if (d.source !== 'miniTurbo') forKart(d.kart, 'whoosh', () => (d.source === 'start' ? this.rocketStart() : this.whoosh(0.6, 1))); });
+    on('kart:stall', (d) => forKart(d.kart, 'thud', () => this.stall()));
     on('kart:hit', (d) => { if (isP(d.kart)) this.hitSound(d.kind); else this.atPos(d.kart && d.kart.position, 0.5, (g) => this.hitSound(d.kind, g)); });
-    on('kart:wallBump', (d) => { if (isP(d.kart)) this.thud(clamp(d.intensity ?? 0.5, 0.1, 1)); });
-    on('kart:bump', (d) => { if (isP(d.a) || isP(d.b)) this.thud(clamp((d.intensity ?? 0.5) * 0.7, 0.1, 0.8), 180); });
-    on('kart:jump', (d) => { if (isP(d.kart)) this.boing(); });
-    on('kart:land', (d) => { if (isP(d.kart)) this.thud(0.35, 90); });
-    on('item:pickup', (d) => { if (isP(d.kart)) this.chime(); });
+    on('kart:wallBump', (d) => forKart(d.kart, 'thud', () => this.thud(clamp(d.intensity ?? 0.5, 0.1, 1))));
+    on('kart:bump', (d) => {
+      const k = isP(d.a) ? d.a : isP(d.b) ? d.b : human(d.a) ? d.a : d.b;
+      forKart(k, 'bump', () => this.thud(clamp((d.intensity ?? 0.5) * 0.7, 0.1, 0.8), 180));
+    });
+    on('kart:jump', (d) => forKart(d.kart, 'boing', () => this.boing()));
+    on('kart:land', (d) => forKart(d.kart, 'land', () => this.thud(0.35, 90)));
+    on('item:pickup', (d) => forKart(d.kart, 'chime', () => this.chime()));
+    // the ticking roulette is a single-player loop; in event mode the "got it" sting is enough
     on('item:roulette', (d) => { if (isP(d.kart)) { this._rouletteActive = true; this._rouletteTimer = 0; this._rouletteElapsed = 0; } });
-    on('item:got', (d) => { if (isP(d.kart)) { this._rouletteActive = false; this.gotItem(); } });
-    on('item:use', (d) => { if (isP(d.kart)) this.throwSound(d.item); });
-    on('item:hit', (d) => { if (isP(d.by) && !isP(d.kart)) this.beep(1320, 0.12, 'square', 0.08); });
+    on('item:got', (d) => { if (isP(d.kart)) this._rouletteActive = false; forKart(d.kart, 'got', () => this.gotItem()); });
+    on('item:use', (d) => forKart(d.kart, 'throw', () => this.throwSound(d.item)));
+    on('item:hit', (d) => { if (!isP(d.kart) && (isP(d.by) || human(d.by))) forKart(d.by, 'hitConfirm', () => this.beep(1320, 0.12, 'square', 0.08)); });
     on('item:explode', (d) => { const small = d.kind === 'small' || (d.radius != null && d.radius < 3); this.atPos(d.position, small ? 0.35 : 1, (g) => (small ? this.pop(g) : this.explosion(g))); });
     on('item:lightning', () => this.zap());
     on('ui:move', () => this.uiClick(0));
@@ -246,10 +273,11 @@ export class AudioEngine {
     } else if (player == null && this.gameplay && !this.paused && Array.isArray(karts) && karts.length > 0) {
       // event-mode bed: one shared hum following the top-3 unfinished karts by speed.
       // Reuses the solo engine nodes (exactly 1 voice, no per-frame allocation).
-      let t0 = -1, t1 = -1, t2 = -1, n = 0, fast = false;
+      let t0 = -1, t1 = -1, t2 = -1, n = 0, fast = false, drifters = 0;
       for (let i = 0; i < karts.length; i++) {
         const k = karts[i];
         if (!k || k.finished) continue;
+        if (k.drifting && !k.airborne && k.teamId > 0 && !k._ai && Math.abs(k.speed || 0) > 6) drifters++;
         let s = k.speed || 0;
         s = s < 0 ? -s : s;
         if (!(s >= 0)) continue;
@@ -275,7 +303,9 @@ export class AudioEngine {
         this.engLfo.frequency.setTargetAtTime(10 + avg * 0.6, t, 0.1);
         this.engFilter.frequency.setTargetAtTime(260 + avg * 45, t, 0.08);
         this.engGain.gain.setTargetAtTime(0.13 + Math.min(avg, 40) * 0.0016, t, 0.1);
-        this.drGain.gain.setTargetAtTime(0, t, 0.05);
+        // shared drift screech: louder the more players are drifting at once (capped)
+        this.drGain.gain.setTargetAtTime(drifters ? Math.min(0.05, 0.022 + drifters * 0.007) : 0, t, drifters ? 0.05 : 0.1);
+        if (drifters) this.drFilter.frequency.setTargetAtTime(1400 + Math.sin(t * 13) * 120, t, 0.05);
       }
     } else {
       this.engGain.gain.setTargetAtTime(0, t, 0.12);
@@ -300,7 +330,7 @@ export class AudioEngine {
     const ctx = this.ctx;
     const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(freq, t);
     const g = ctx.createGain(); this._env(g, t, attack, peak, Math.max(0.02, dur));
-    o.connect(g); g.connect(dest || this.sfxGain);
+    o.connect(g); g.connect(dest || this._route || this.sfxGain);
     o.start(t); o.stop(t + attack + dur + 0.05);
     return { o, g };
   }
@@ -310,7 +340,7 @@ export class AudioEngine {
     s.playbackRate.value = 1;
     const f = ctx.createBiquadFilter(); f.type = filterType; f.frequency.setValueAtTime(freq, t); f.Q.value = q;
     const g = ctx.createGain(); this._env(g, t, 0.003, peak, dur);
-    s.connect(f); f.connect(g); g.connect(dest || this.sfxGain);
+    s.connect(f); f.connect(g); g.connect(dest || this._route || this.sfxGain);
     const off = Math.random() * Math.max(0, 1.9 - dur);
     s.start(t, off); s.stop(t + dur + 0.05);
     return { s, f, g };
@@ -397,6 +427,21 @@ export class AudioEngine {
     n.f.frequency.exponentialRampToValueAtTime(600, t + 0.25);
     const o = this._osc('square', 500, t, 0.15, 0.05);
     o.o.frequency.exponentialRampToValueAtTime(1200, t + 0.15);
+  }
+  /** Rocket start: a rising double whoosh with a bright top note (more than a plain boost). */
+  rocketStart() {
+    const t = this.ctx.currentTime;
+    this.whoosh(0.7, 1.35);
+    const o = this._osc('square', mtof(79), t, 0.12, 0.07);
+    o.o.frequency.exponentialRampToValueAtTime(mtof(91), t + 0.12);
+    this._osc('triangle', mtof(96), t + 0.12, 0.25, 0.06);
+  }
+  /** Engine burnout on a too-early rocket start: a sputter that drops away. */
+  stall() {
+    const t = this.ctx.currentTime;
+    for (let i = 0; i < 4; i++) this._noise(t + i * 0.07, 0.05, 0.16, 'lowpass', 500 - i * 60, 1);
+    const o = this._osc('sawtooth', 160, t, 0.45, 0.07);
+    o.o.frequency.exponentialRampToValueAtTime(45, t + 0.45);
   }
   explosion(vol = 1) {
     const t = this.ctx.currentTime;

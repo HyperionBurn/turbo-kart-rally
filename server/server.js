@@ -309,6 +309,18 @@ function liveHostRooms() {
   for (const room of rooms.values()) if (wsLive(room.hostWs)) out.push(room);
   return out;
 }
+/**
+ * The room a code-less phone should join: the only open big screen, or, if a stale tab is
+ * also open (mid-race, results, leaderboard), the only one sitting in its lobby/settings,
+ * i.e. the one people are walking up to; among several, the most recently opened.
+ */
+function pickJoinRoom(live) {
+  if (live.length <= 1) return live[0] || null;
+  const accepting = live.filter((r) => r.session.flow === 'lobby' || r.session.flow === 'settings');
+  const pool = accepting.length ? accepting : live;
+  // tie-break: the most recently opened big screen (a forgotten tab is older)
+  return pool.slice().sort((a, b) => (b.hostSince || 0) - (a.hostSince || 0))[0];
+}
 function spectatorCount(room) { let n = 0; for (const s of room.spectators) { try { if (s && s.readyState === 1) n++; } catch {} } return n; }
 function lobbyState(room) {
   return { teams: room.teams.map(publicTeam), flow: room.session.flow, pointsTable: room.session.pointsTable, raceIndex: room.session.raceIndex, laps: room.session.settings.laps ?? 3, totalRaces: room.session.settings.raceCount || 3, spectatorCount: spectatorCount(room), hostOnline: wsLive(room.hostWs) };
@@ -383,9 +395,10 @@ const server = http.createServer((req, res) => {
     // arcade hub's QR, a typed address) finds the big screen by itself. Disabled behind a
     // public hostname, where the room code is the household's only key.
     const isPublic = isPublicHost(req.headers.host);
-    const live = isPublic ? [] : liveHostRooms().map((r) => ({ room: r.code, flow: r.session.flow, teams: r.teams.filter((t) => t.connected).length }));
+    const live = isPublic ? [] : liveHostRooms().map((r) => ({ room: r.code, flow: r.session.flow, teams: r.teams.filter((t) => t.connected).length, since: r.hostSince || 0 }));
+    const pick = isPublic ? null : pickJoinRoom(liveHostRooms());
     res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify({ discovery: !isPublic, rooms: live }));
+    res.end(JSON.stringify({ discovery: !isPublic, rooms: live, pick: pick ? pick.code : null }));
     return;
   }
   else if (u === '/controller' || u === '/controller/') file = 'controller/index.html';
@@ -451,6 +464,7 @@ function handleJson(ws, m) {
       allDiagSockets.delete(ws);
       room.diagSockets.delete(ws);
       ws._role = 'host'; ws._diagAll = false; ws._roomId = room.code;
+      if (room.hostWs !== ws) room.hostSince = Date.now();
       room.hostWs = ws;
       send(ws, { type: 'session', room: room.code, state: room.session, net: netInfo(ws._host) });
       broadcastLobby(room);
@@ -463,7 +477,8 @@ function handleJson(ws, m) {
       const codeless = roomArg == null || (typeof roomArg === 'string' && roomArg.trim() === '');
       if (codeless && !isPublicHost(ws._host)) {
         const live = liveHostRooms();
-        if (!live.some((r) => r.code === DEFAULT_ROOM) && live.length === 1) roomArg = live[0].code;
+        const pick = live.some((r) => r.code === DEFAULT_ROOM) ? null : pickJoinRoom(live);
+        if (pick) roomArg = pick.code;
       }
       const room = getRoom(roomArg);
       switchCleanup(ws, room.code);
