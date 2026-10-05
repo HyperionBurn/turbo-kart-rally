@@ -169,7 +169,7 @@ export class AIDriver {
       const latK = kart.lateral || 0;
       const edgeK = clamp((Math.abs(latK) - halfW * 0.7) / (halfW * 0.3), 0, 1);
       const wantYawAdj = wantYaw - Math.sign(latK) * edgeK * 0.9;
-      const into = ((wantYawAdj * dir) / turnRateNow - 0.62) / 0.5;
+      const into = ((wantYawAdj * dir) / turnRateNow - (PHYSICS.driftTurnBase ?? 0.62)) / (PHYSICS.driftTurnSpan ?? 0.5);
       steer = clamp(into, -1, 1) * dir;
       if (into < -1.6) this.driftOppositeTime += dt; else this.driftOppositeTime = Math.max(0, this.driftOppositeTime - dt);
       const nextTh = PHYSICS.driftChargeThresholds?.[kart.driftLevel];

@@ -208,6 +208,9 @@ test('rocket-start hint shows in countdown, hides once racing (synthetic flow)',
     await page.evaluate(() => document.querySelector('#view-race').classList.add('active'));
     await page.evaluate(() => { window.__tkr.state.flow = 'countdown'; window.__tkr.updateRocketHint(); });
     await expect(page.locator('#rocket-hint')).toBeVisible({ timeout: 5000 });
+    // GAS pulses only when the "1" is up: holding from the start burns the engine out
+    expect(await page.evaluate(() => document.querySelector('#ctl-gas').classList.contains('rocket'))).toBe(false);
+    await page.evaluate(() => window.__tkr.onMessage({ type: 'countdown', n: 1 }));
     expect(await page.evaluate(() => document.querySelector('#ctl-gas').classList.contains('rocket'))).toBe(true);
     await page.evaluate(() => { window.__tkr.state.flow = 'racing'; window.__tkr.updateRocketHint(); });
     await expect(page.locator('#rocket-hint')).toBeHidden({ timeout: 5000 });

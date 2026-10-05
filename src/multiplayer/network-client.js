@@ -82,7 +82,7 @@ export class HostNetworkClient {
       this.latchedEdges.set(msg.teamId, edges);
       this.latest.set(msg.teamId, {
         steer: msg.steer, throttle: msg.throttle, brake: msg.brake,
-        drift: !!(f & 1), lookBack: !!(f & 2),
+        drift: !!(f & 1), lookBack: !!(f & 2), assist: !!(f & 32),
         seq: msg.seq, clientTimestamp: msg.timestamp, hostReceivedAt: now, sessionId: msg.sessionId,
         offsetApplied: null,
       });
@@ -164,7 +164,7 @@ export class HostNetworkClient {
     const edges = this.latchedEdges.get(teamId) || { item: false, hop: false, pause: false };
     kart.input = {
       throttle: st.throttle, brake: st.brake, steer: st.steer, drift: st.drift,
-      lookBack: st.lookBack, item: edges.item,
+      lookBack: st.lookBack, item: edges.item, assist: !!st.assist,
     };
     if (edges.hop) bus.emit('net:hop', { teamId });
     if (edges.pause) bus.emit('net:pause', { teamId });
