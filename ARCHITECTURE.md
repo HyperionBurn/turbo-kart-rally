@@ -1,7 +1,7 @@
-﻿# Turbo Kart Rally â€” Architecture Contract
+# Turbo Kart Rally — Architecture Contract
 
 A kart racer in the spirit of Mario Kart, built with **Three.js r170** as native ES modules (no build step).
-`index.html` loads `src/main.js` through an import map (`three`, `three/addons/â€¦`, `qrcode-generator`).
+`index.html` loads `src/main.js` through an import map (`three`, `three/addons/…`, `qrcode-generator`).
 The whole thing is served by the local event server:
 
 ```bash
@@ -16,9 +16,9 @@ npm start     # -> http://localhost:8081  (host), /controller (phones), /diagnos
 
 - 1 unit = 1 meter. **Y is up.** Track lies in the XZ plane (with gentle elevation allowed).
 - Kart heading `h` (radians) is `object3D.rotation.y`. **Forward vector = (sin h, 0, cos h)**. Models face **+Z**.
-- Driver's right vector = forward Ã— up = **(âˆ’cos h, 0, sin h)** (at h = 0 the kart faces +Z and its right side is âˆ’X).
+- Driver's right vector = forward × up = **(−cos h, 0, sin h)** (at h = 0 the kart faces +Z and its right side is −X).
   Turning right therefore means *decreasing* heading.
-- `input.steer`: **+1 = turn toward driver's right**, âˆ’1 = left.
+- `input.steer`: **+1 = turn toward driver's right**, −1 = left.
 - Shared tuning lives in `src/config.js` (`PHYSICS`, `RACE`, `CHARACTERS`, `ITEMS`, `DIFFICULTY`, `KEYS`). Import; don't duplicate.
 - Cross-system notifications go through `bus` from `src/events.js` (`bus.on(name, fn)`, `bus.emit(name, data)`).
 - Only import `three` and `three/addons/...`. No other dependencies.
@@ -29,18 +29,18 @@ npm start     # -> http://localhost:8081  (host), /controller (phones), /diagnos
 
 | File(s) | Owner | Exports |
 |---|---|---|
-| `src/track.js`, `src/environment.js` | Agent 1 â€” World | `createTrack(scene, renderer)` |
-| `src/kart.js`, `src/ai.js`, `src/input.js` | Agent 2 â€” Driving | `Kart`, `resolveKartCollisions`, `AIDriver`, `InputController` |
-| `src/items.js`, `src/effects.js` | Agent 3 â€” Items & FX | `ItemSystem`, `Effects` |
-| `src/models.js`, `src/camera.js` | Agent 4 â€” Art & Camera | `createKartModel`, `createItemModel`, `ChaseCamera` |
-| `src/main.js`, `src/race.js`, `src/hud.js`, `src/menu.js`, `src/audio.js`, `src/styles.css` | Agent 5 â€” Game & UI | game loop, `RaceManager`, `HUD`, `Menu`, `AudioEngine` |
-| `src/multiplayer/*`, `controller/*`, `server/*`, `src/event/*` | Event mode | see Â§6 |
+| `src/track.js`, `src/environment.js` | Agent 1 — World | `createTrack(scene, renderer)` |
+| `src/kart.js`, `src/ai.js`, `src/input.js` | Agent 2 — Driving | `Kart`, `resolveKartCollisions`, `AIDriver`, `InputController` |
+| `src/items.js`, `src/effects.js` | Agent 3 — Items & FX | `ItemSystem`, `Effects` |
+| `src/models.js`, `src/camera.js` | Agent 4 — Art & Camera | `createKartModel`, `createItemModel`, `ChaseCamera` |
+| `src/main.js`, `src/race.js`, `src/hud.js`, `src/menu.js`, `src/audio.js`, `src/styles.css` | Agent 5 — Game & UI | game loop, `RaceManager`, `HUD`, `Menu`, `AudioEngine` |
+| `src/multiplayer/*`, `controller/*`, `server/*`, `src/event/*` | Event mode | see §6 |
 
 Do **not** edit files you don't own. If you need something from another module, code against this contract.
 
 ---
 
-## 1. World â€” `src/track.js`
+## 1. World — `src/track.js`
 
 ```js
 export function createTrack(scene, renderer) // -> Track (adds everything to scene: road, walls, scenery, sky, lights, fog)
@@ -50,13 +50,13 @@ export function createTrack(scene, renderer) // -> Track (adds everything to sce
 |---|---|---|
 | `name` | string | display name, e.g. "Sunset Bay Circuit" |
 | `curve` | `THREE.CatmullRomCurve3` (closed) | road centerline (y = road height) |
-| `length` | number | curve length (~1600â€“2200 units; lap â‰ˆ 45â€“60 s) |
+| `length` | number | curve length (~1600–2200 units; lap ≈ 45–60 s) |
 | `roadWidth` | number | full paved width (~24) |
-| `startPositions` | `Array<{position: Vector3, heading: number}>` length â‰¥ 8 | grid slots behind the start line; index 0 = pole |
-| `itemBoxPositions` | `Vector3[]` | centre of each item box (rows of 4â€“6 across the road, 4+ rows) |
-| `minimap` | `{ points: Array<{x,z}>, bounds: {minX,maxX,minZ,maxZ} }` | â‰¥ 200 centerline samples for HUD minimap |
-| `getSurfaceInfo(pos: Vector3, hintT?: number)` | â†’ `{ height, normal: Vector3, surface, t, lateral, onRoad }` | `height` = ground Y under pos; `surface` âˆˆ `'road'|'offroad'|'boost'|'jump'`; `t` âˆˆ [0,1) progress along centerline (0 = start/finish line, increasing in race direction); `lateral` = signed distance from centerline (+ = right of race direction); `hintT` = previous t for fast local search |
-| `resolveWall(pos: Vector3, radius: number)` | â†’ `null` or `{ normal: Vector3, depth: number }` | outer barrier collision; caller pushes pos by `normal*depth` and reflects velocity |
+| `startPositions` | `Array<{position: Vector3, heading: number}>` length ≥ 8 | grid slots behind the start line; index 0 = pole |
+| `itemBoxPositions` | `Vector3[]` | centre of each item box (rows of 4–6 across the road, 4+ rows) |
+| `minimap` | `{ points: Array<{x,z}>, bounds: {minX,maxX,minZ,maxZ} }` | ≥ 200 centerline samples for HUD minimap |
+| `getSurfaceInfo(pos: Vector3, hintT?: number)` | → `{ height, normal: Vector3, surface, t, lateral, onRoad }` | `height` = ground Y under pos; `surface` ∈ `'road'|'offroad'|'boost'|'jump'`; `t` ∈ [0,1) progress along centerline (0 = start/finish line, increasing in race direction); `lateral` = signed distance from centerline (+ = right of race direction); `hintT` = previous t for fast local search |
+| `resolveWall(pos: Vector3, radius: number)` | → `null` or `{ normal: Vector3, depth: number }` | outer barrier collision; caller pushes pos by `normal*depth` and reflects velocity |
 | `getPointAt(t)` / `getTangentAt(t)` | Vector3 | centerline point / unit forward direction at t |
 | `getRacingLine(t)` | Vector3 | a good AI line point (cuts apexes); defaults to centerline |
 | `update(dt, time)` | | animate water, flags, crowds, etc. |
@@ -66,7 +66,7 @@ Surfaces: `boost` pads (dash panels, glowing chevrons) and `jump` ramps (kart ge
 Offroad (grass/sand) runs a few meters outside the road before the barrier.
 The race direction at t=0 must match `startPositions[i].heading`.
 
-## 2. Driving â€” `src/kart.js`, `src/ai.js`, `src/input.js`
+## 2. Driving — `src/kart.js`, `src/ai.js`, `src/input.js`
 
 ```js
 export class Kart {
@@ -77,7 +77,7 @@ export class Kart {
   velocity          // Vector3
   heading           // radians
   speed             // signed forward speed (units/s)
-  radius            // PHYSICS.kartRadius (Ã— 0.6 while shrunk)
+  radius            // PHYSICS.kartRadius (× 0.6 while shrunk)
   input             // { throttle 0..1, brake 0..1, steer -1..1, drift bool (held), item bool (pressed this frame), lookBack bool }
   isPlayer, character, index
   trackT            // last t from track.getSurfaceInfo
@@ -86,7 +86,7 @@ export class Kart {
   drifting, driftDir (-1|1), driftLevel (0..3), boostTimer, starTimer, shrinkTimer, spinTimer, invulnTimer
   item              // null | item id held (set by ItemSystem)
   itemCount         // for triple items
-  controlsLocked    // bool â€” RaceManager sets true during countdown / after finish (AI keeps driving after finish)
+  controlsLocked    // bool — RaceManager sets true during countdown / after finish (AI keeps driving after finish)
   // race fields maintained by RaceManager: lap, place, finished, finishTime, raceProgress
   update(dt)
   applyHit(kind)     // 'spin' (banana), 'tumble' (shell/blue shell), 'shrink' (lightning); ignored while starTimer>0 or invulnTimer>0
@@ -99,10 +99,10 @@ export class Kart {
 export function resolveKartCollisions(karts) // pairwise sphere push, weight-based; star kart spins non-star karts
 ```
 Arcade feel requirements: snappy acceleration, drift by holding drift while steering (small hop on press),
-3-level mini-turbo (blueâ†’orangeâ†’purple sparks) released as boost, boost pads, jump ramps with airtime,
+3-level mini-turbo (blue→orange→purple sparks) released as boost, boost pads, jump ramps with airtime,
 offroad slowdown (ignored while boosting/star), wall bounce, slope following via `getSurfaceInfo().normal`,
-start-line rocket boost (press throttle during last part of countdown â€” RaceManager emits `race:countdown`).
-Kart calls `model.animate(...)` each frame (see Â§4).
+start-line rocket boost (press throttle during last part of countdown — RaceManager emits `race:countdown`).
+Kart calls `model.animate(...)` each frame (see §4).
 
 Events the Kart must emit (on `bus`):
 `kart:driftStart {kart}`, `kart:driftLevel {kart, level}`, `kart:driftEnd {kart}`, `kart:miniTurbo {kart, level}`,
@@ -119,7 +119,7 @@ export class InputController { constructor(); getInput() /* same shape as kart.i
 // keyboard (KEYS in config) + Gamepad API. `item` is edge-triggered. Also exposes `pausePressed` via consumePressed('pause').
 ```
 
-## 3. Items & FX â€” `src/items.js`, `src/effects.js`
+## 3. Items & FX — `src/items.js`, `src/effects.js`
 
 ```js
 export class ItemSystem {
@@ -149,9 +149,9 @@ export class Effects {
 }
 ```
 Effects subscribe to bus events themselves (kart:*, item:*). Pooled particles (InstancedMesh or Points), no per-frame allocations.
-Exhaust / wheel positions come from `kart.object3D` + `model.anchors` (Â§4).
+Exhaust / wheel positions come from `kart.object3D` + `model.anchors` (§4).
 
-## 4. Art & Camera â€” `src/models.js`, `src/camera.js`
+## 4. Art & Camera — `src/models.js`, `src/camera.js`
 
 ```js
 export function createKartModel(character) // -> KartModel
@@ -179,9 +179,9 @@ export class ChaseCamera {
 }
 ```
 
-## 5. Game & UI â€” `src/main.js`, `src/race.js`, `src/hud.js`, `src/menu.js`, `src/audio.js`, `src/styles.css`
+## 5. Game & UI — `src/main.js`, `src/race.js`, `src/hud.js`, `src/menu.js`, `src/audio.js`, `src/styles.css`
 
-Game flow: **Title â†’ Character select (8 racers, stats bars) â†’ Difficulty/laps â†’ Intro flyover â†’ Countdown 3-2-1-GO â†’ Race (3 laps) â†’ Results â†’ Restart/Menu**. Pause menu (Esc).
+Game flow: **Title → Character select (8 racers, stats bars) → Difficulty/laps → Intro flyover → Countdown 3-2-1-GO → Race (3 laps) → Results → Restart/Menu**. Pause menu (Esc).
 
 `main.js` owns renderer (antialias, ACES tone mapping, sRGB, PCF soft shadows), `PerspectiveCamera`,
 post-processing (EffectComposer + UnrealBloomPass, subtle), resize handling, and the loop:
@@ -203,11 +203,11 @@ composer.render()
 ```
 
 `RaceManager`: grid placement from `track.startPositions` (player starts mid-pack), countdown (emits `race:countdown {n}` for 3,2,1 and `race:go`),
-lap counting from `kart.trackT` wraps (must pass tâ‰ˆ0.5 checkpoint before a lap counts â€” no reverse cheating), `raceProgress = lap + t`,
+lap counting from `kart.trackT` wraps (must pass t≈0.5 checkpoint before a lap counts — no reverse cheating), `raceProgress = lap + t`,
 places sorted by progress, `race:lap {kart, lap}`, `race:finalLap`, `race:finish {kart, place}`, `race:end` (when player finishes;
 AI remaining get estimated times). Wrong-way detection for the player (`race:wrongWay {active}`).
 
-`HUD` (DOM overlay in `#ui-root`): position (big "1st"â€¦"8th" with colour), lap counter, race timer + lap splits, item slot with
+`HUD` (DOM overlay in `#ui-root`): position (big "1st"…"8th" with colour), lap counter, race timer + lap splits, item slot with
 roulette animation, minimap (canvas) with all racers as coloured dots, speedometer, drift/boost indicators, countdown overlay,
 "FINAL LAP!", "WRONG WAY", finish banner, results table.
 
@@ -216,9 +216,9 @@ roulette ticks, item use/hit/explosion, countdown beeps, lap/final-lap jingle, f
 music loop (and faster tempo on final lap). Unlock on first user gesture. Master volume + mute toggle (M key).
 
 ## Event catalogue (bus)
-race:countdown {n} Â· race:go Â· race:lap {kart, lap} Â· race:finalLap Â· race:leader {kart, prev, teamId} Â· race:finish {kart, place} Â· race:end Â· race:wrongWay {active}
-kart:driftStart Â· kart:driftLevel Â· kart:driftEnd Â· kart:miniTurbo Â· kart:boost Â· kart:hit Â· kart:wallBump Â· kart:jump Â· kart:land Â· kart:bump
-item:pickup Â· item:roulette Â· item:got Â· item:use Â· item:hit Â· item:explode Â· item:lightning
+race:countdown {n} · race:go · race:lap {kart, lap} · race:finalLap · race:leader {kart, prev, teamId} · race:finish {kart, place} · race:end · race:wrongWay {active}
+kart:driftStart · kart:driftLevel · kart:driftEnd · kart:miniTurbo · kart:boost · kart:hit · kart:wallBump · kart:jump · kart:land · kart:bump
+item:pickup · item:roulette · item:got · item:use · item:hit · item:explode · item:lightning
 game:state {state}  ('title'|'select'|'intro'|'countdown'|'racing'|'finished'|'paused')
 gamepad:connected {index, id, type, label, mapping} · gamepad:disconnected {index, id}
 
@@ -233,9 +233,9 @@ six scissored viewports) and a fixed-timestep simulation loop.
 ## 6.1 Topology
 
 ```
-PHONE 1..6 â”€â”€Wi-Fi/LANâ”€â”€> LOCAL SERVER (server/server.js, port 8080) â”€â”€localhost WSâ”€â”€> HOST BROWSER
-   /controller (browser)         rooms Â· relays Â· session authority        6 cameras Â· authoritative physics
-                                diagnostics Â· fault injection
+PHONE 1..6 ──Wi-Fi/LAN──> LOCAL SERVER (server/server.js, port 8080) ──localhost WS──> HOST BROWSER
+   /controller (browser)         rooms · relays · session authority        6 cameras · authoritative physics
+                                diagnostics · fault injection
 ```
 
 - **Phones send input, never positions.** Physics, collisions, items, laps, placement and
@@ -317,7 +317,7 @@ leaderboard state is restored, never an in-flight race).
   `probeData()`, `enableProbe()`, `simulateFor(seconds)`, `skipEventCountdown()`, `send(msg)`.
 - Latency figures reported by the game are **software** numbers (input event -> applied ->
   frame submitted). Physical input-to-photon must be measured with a high-speed camera;
-  see `EVENT_RUNBOOK.md` Â§5.
+  see `EVENT_RUNBOOK.md` §5.
 
 ## 6.7 Tests
 

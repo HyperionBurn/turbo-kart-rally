@@ -476,6 +476,7 @@ function onFlowChange(from, to) {
     if (to === 'lobby') releaseWake();
   }
   $('race-team').textContent = state.name || (state.teamId ? `TEAM ${state.teamId}` : '');
+  $('race-team').style.color = state.color || ''; // your name in your team colour, matching your kart's tag and panel
   updateRocketHint();
 }
 function flashCountdown(text, go) {
@@ -733,7 +734,16 @@ function autoResume() {
   // show code entry (prefilled with the last room) and look for the big screen on this
   // network. On a LAN with one big screen open, the phone lands on name entry by itself.
   showView('join');
-  if (storedRoom()) showRoomStep(); else { showRoomStepKeepName(); updateRoomChips(); }
+  const sr = storedRoom();
+  if (!sr && state.token) {
+    // A phone that already owns a slot reclaims it on reload with no taps (the server routes
+    // a code-less join to the open big screen and honours the token there).
+    showRoomStepKeepName(); updateRoomChips();
+    $('join-status').textContent = 'Reclaiming your slot…';
+    connect();
+    return;
+  }
+  if (sr) showRoomStep(); else { showRoomStepKeepName(); updateRoomChips(); }
   discoverRoom();
 }
 
@@ -755,7 +765,14 @@ async function discoverRoom() {
   if (live === null) return;
   const st = $('room-status');
   if (live.length === 1) {
+    const wasLastRoom = live[0].room === storedRoom();
     setRoom(live[0].room, { silent: true });
+    if (state.token && wasLastRoom) {
+      // same big screen as last time and we hold a slot token: take the slot straight back
+      setStatus('Reclaiming your slot…', 'ok');
+      connect();
+      return;
+    }
     setStatus(`Big screen found (room ${live[0].room}) — enter your team name and JOIN.`, 'ok');
     return;
   }
@@ -1108,7 +1125,9 @@ window.addEventListener('pointerdown', (e) => {
 });
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
-document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+// block scrolling/rubber-banding only on the race pad; the join, lobby and results views
+// must scroll on short landscape phones or their buttons end up out of reach
+document.addEventListener('touchmove', (e) => { if (views.race.classList.contains('active')) e.preventDefault(); }, { passive: false });
 
 function buzz(ms) { try { if (!hapticsOn()) return; navigator.vibrate && navigator.vibrate(ms); } catch {} }
 $('pause-btn').addEventListener('click', (e) => {

@@ -18,7 +18,7 @@ const CLIENTS = +(args.clients || 6);
 const DURATION = +(args.duration || 30);
 const FRANTIC = !!args.frantic;
 const DISCONNECT_AT = args['disconnect-at'] ? +args['disconnect-at'] : null;
-const HOST = args.host || '127.0.0.1:8080';
+const HOST = args.host || '127.0.0.1:8081'; // the server's default port
 const RATE = +(args.rate || 30);
 // --as-host: the harness itself acts as the host page (no game page running)
 // --client-only: a real host page is already connected, so only send controller traffic

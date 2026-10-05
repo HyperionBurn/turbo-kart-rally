@@ -1,4 +1,4 @@
-﻿// Event-mode flow: six phones join, select, ready, race, finish, points, leaderboard, reconnect.
+// Event-mode flow: six phones join, select, ready, race, finish, points, leaderboard, reconnect.
 const { test, expect } = require('@playwright/test');
 
 const HOST = 'http://127.0.0.1:8081';
@@ -178,6 +178,7 @@ test('a phone can reclaim its slot after dropping out mid-race', async ({ browse
 });
 
 test('host can force ready, replace a team with AI, and reset the tournament', async ({ browser }) => {
+  test.setTimeout(360000); // a full simulated race in headless software rendering
   const host = await newHost(browser);
   await host.click('#btn-event', { force: true });
   const ctrls = [];
@@ -207,7 +208,7 @@ test('host can force ready, replace a team with AI, and reset the tournament', a
   await host.click('#ev-reset', { force: true });
   await host.waitForTimeout(800);
   await host.click('#ev-again', { force: true });
-  const scores = await host.evaluate(() => fetch('/debug/slots').then(r => r.json()).then(j => j.scores));
+  const scores = await host.evaluate(() => fetch('/debug/slots?room=' + window.__game.eventRoom).then(r => r.json()).then(j => j.scores));
   expect(scores.length).toBe(0);
 
   for (const c of ctrls) await c.ctx.close();
