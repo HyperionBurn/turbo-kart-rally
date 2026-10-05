@@ -75,6 +75,11 @@ title → EVENT MODE → lobby with QR + room code → six phones join, pick rac
   hand the slot to AI after 15 s, and the same phone reclaims its team automatically when it
   comes back — mid-race, without restarting.
 - Points accumulate across races for the whole session; the leaderboard animates the totals.
+- Three circuits: **Palm Cove Circuit**, **Sunset Speedway** and **Frosty Peaks**. Race settings →
+  Track picks one, or **ROTATE** (default) runs a different circuit each race.
+- Every viewport is framed and badged in its team colour, floating name tags sit over the other
+  karts, and each panel has a small minimap (your kart ringed in white) so you can see who is
+  ahead and how far back you are.
 
 ## Controls
 
