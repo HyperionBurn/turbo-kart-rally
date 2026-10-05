@@ -25,10 +25,15 @@ const state = {
 // NOTHING except the in-memory slot (teamId/sessionId/ready); name + token
 // stay in localStorage.
 const ROOM_KEY = 'tkr-room';
+// Same alphabet the big screen mints codes from (no 0/O/1/I/L). Anything else used to be
+// accepted here and then silently re-routed by the server to the shared default room, so
+// a mistyped code "joined" fine but never appeared on the projector.
+const ROOM_CODE_RE = /^[A-HJ-KM-NP-Z2-9]{4}$/;
 function normalizeRoom(s) {
   if (typeof s !== 'string') return null;
   const c = s.trim().toUpperCase();
-  return /^[A-Z0-9]{4}$/.test(c) ? c : null;
+  if (c === 'PLAY') return c; // legacy shared room
+  return ROOM_CODE_RE.test(c) ? c : null;
 }
 function roomFromQuery() {
   try {
@@ -144,7 +149,10 @@ function connect() {
     onMessage(m);
   };
   ws.onclose = () => {
-    if (suppressReconnect) return;
+    // A replaced socket (room switch, JOIN pressed again) closes asynchronously, after the
+    // new one exists: only the current socket may schedule a reconnect, or two sockets end
+    // up fighting over the same slot.
+    if (suppressReconnect || ws !== state.ws) return;
     reconnectAttempts++;
     const delay = Math.min(5000, 800 * Math.pow(1.5, Math.min(reconnectAttempts, 5)));
     setConn('reconnecting', `Connection lost — retrying (${reconnectAttempts})…`, 'warn');
@@ -208,6 +216,13 @@ function onMessage(m) {
     case 'joined':
       state.teamId = m.teamId; state.sessionId = m.sessionId; state.token = m.token;
       state.color = m.color; state.flow = m.flow || 'lobby';
+      // the server may have routed a code-less join to the open big screen: remember that room
+      if (normalizeRoom(m.room || '') && m.room !== state.room) {
+        state.room = normalizeRoom(m.room);
+        try { localStorage.setItem(ROOM_KEY, state.room); } catch {}
+        updateRoomChips();
+      }
+      state.hostGoneAt = 0;
       localStorage.setItem('tkr-token', m.token);
       $('team-name').textContent = state.name || `Team ${m.teamId}`;
       $('team-color').style.background = m.color;
@@ -247,6 +262,10 @@ function onMessage(m) {
       if (typeof st.laps === 'number' && st.laps > 0) state.totalLaps = st.laps;
       if (typeof st.totalRaces === 'number') state.totalRaces = st.totalRaces;
       else state.totalRaces = undefined;
+      // Is a big screen actually connected to this room? (absent on old servers => assume yes)
+      if (st.hostOnline === false) { if (!state.hostGoneAt) state.hostGoneAt = Date.now(); }
+      else state.hostGoneAt = 0;
+      syncHostBanner();
       const teams = Array.isArray(st.teams) ? st.teams : [];
       const me = teams.find((t) => t && t.id === state.teamId);
       const readyCount = teams.filter((t) => t && t.connected && t.ready).length;
@@ -705,21 +724,71 @@ function autoResume() {
     if (st) { st.textContent = 'That room code looks wrong — enter the 4-character code.'; st.className = 'status err'; }
     return;
   }
-  const sr = storedRoom();
-  if (sr) {
-    // Last room known: show code entry with prefill + one-tap rejoin.
-    // No auto-connect here, so "no query shows code entry" holds even with a token.
-    showView('join');
-    showRoomStep();
+  // No code in the link (a bare /controller address, the arcade hub's QR, a typed URL):
+  // show code entry (prefilled with the last room) and look for the big screen on this
+  // network. On a LAN with one big screen open, the phone lands on name entry by itself.
+  showView('join');
+  if (storedRoom()) showRoomStep(); else { showRoomStepKeepName(); updateRoomChips(); }
+  discoverRoom();
+}
+
+// ---------------- LAN room discovery + "is the big screen there?" watchdog ----------------
+let discoverTimer = 0;
+async function fetchLiveRooms() {
+  try {
+    const r = await fetch('/api/rooms', { cache: 'no-store' });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j && j.discovery ? (Array.isArray(j.rooms) ? j.rooms : []) : null; // null: public server, code required
+  } catch { return null; }
+}
+async function discoverRoom() {
+  clearTimeout(discoverTimer);
+  if (state.room || state.teamId) return;
+  const live = await fetchLiveRooms();
+  if (state.room || state.teamId) return; // the player typed a code meanwhile
+  if (live === null) return;
+  const st = $('room-status');
+  if (live.length === 1) {
+    setRoom(live[0].room, { silent: true });
+    setStatus(`Big screen found (room ${live[0].room}) — enter your team name and JOIN.`, 'ok');
     return;
   }
-  if (!state.token) { showView('join'); showRoomStepKeepName(); updateRoomChips(); return; }
-  showView('join');
-  showRoomStepKeepName();
-  updateRoomChips();
-  $('join-status').textContent = 'Reclaiming your slot…';
-  connect();
+  if (st) {
+    st.textContent = live.length
+      ? 'Several big screens are open — type the room code shown on yours.'
+      : 'Looking for the big screen… (on the laptop: press EVENT MODE). You can also type the room code.';
+    st.className = 'status warn';
+  }
+  discoverTimer = setTimeout(discoverRoom, 2000);
 }
+function syncHostBanner() {
+  const b = $('host-banner');
+  if (!b) return;
+  const gone = !!(state.teamId && state.hostGoneAt && Date.now() - state.hostGoneAt > 3000);
+  b.hidden = !gone;
+  if (gone) b.textContent = `Big screen not connected to room ${state.room || '—'} — keep this page open, it reconnects by itself.`;
+}
+/** The host pressed NEW CODE or reopened without its room: follow the one open big screen. */
+async function followMovedHost() {
+  if (!state.teamId || !state.hostGoneAt || Date.now() - state.hostGoneAt < 4000) return;
+  if (followMovedHost.busy) return;
+  followMovedHost.busy = true;
+  try {
+    const live = await fetchLiveRooms();
+    if (!live || live.length !== 1 || live[0].room === state.room || !state.hostGoneAt) return;
+    const code = live[0].room;
+    state.room = code; state.teamId = 0; state.sessionId = 0; state.ready = false; state.hostGoneAt = 0;
+    try { localStorage.setItem(ROOM_KEY, code); } catch {}
+    updateRoomChips(); syncHostBanner();
+    suppressReconnect = true;
+    try { state.ws && state.ws.close(); } catch {}
+    suppressReconnect = false;
+    setStatus(`The big screen moved to room ${code} — rejoining…`, 'warn');
+    connect();
+  } finally { followMovedHost.busy = false; }
+}
+setInterval(() => { syncHostBanner(); followMovedHost(); }, 1000);
 
 // ---------------- lobby
 const charGrid = $('char-grid');
@@ -825,10 +894,14 @@ $('forget-btn').hidden = !state.token;
     });
   }
   function doRoomJoin() {
-    const norm = normalizeRoom(($('room-input') || {}).value || '');
+    const typed = (($('room-input') || {}).value || '').trim().toUpperCase();
+    const norm = normalizeRoom(typed);
     const st = $('room-status');
     if (!norm) {
-      if (st) { st.textContent = 'Enter the 4-character room code from the host screen.'; st.className = 'status err'; }
+      const msg = typed.length === 4 && /[01OIL]/.test(typed)
+        ? 'Room codes never use 0, O, 1, I or L — check the letters on the big screen.'
+        : 'Enter the 4-character room code from the big screen.';
+      if (st) { st.textContent = msg; st.className = 'status err'; }
       buzz(60);
       return;
     }

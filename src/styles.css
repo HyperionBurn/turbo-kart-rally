@@ -504,6 +504,7 @@ button { font: inherit; color: inherit; }
 .event-ui[data-screen="lobby"], .event-ui[data-screen="settings"], .event-ui[data-screen="prerace"], .event-ui[data-screen="results"], .event-ui[data-screen="leaderboard"] { pointer-events: auto; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(8,12,30,.55), rgba(8,12,30,.88)); }
 .ev-lobby { display: flex; gap: 40px; align-items: stretch; }
 .ev-left { display: flex; flex-direction: column; align-items: center; gap: 10px; background: rgba(12,16,38,.72); padding: 26px 34px; border-radius: 22px; border: 1px solid #2a3050; }
+#ev-qr { width: 300px; height: 300px; image-rendering: pixelated; border-radius: 10px; background: #fff; }
 .ev-kicker { font-weight: 900; letter-spacing: 4px; color: #fdd835; font-size: 16px; }
 .ev-url { font-size: 20px; color: #fff; font-weight: 900; letter-spacing: 1px; background: rgba(0,0,0,.55); border: 1px solid #fff; border-radius: 10px; padding: 6px 12px; max-width: 340px; word-break: break-all; text-align: center; }
 .ev-guide { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 340px; }

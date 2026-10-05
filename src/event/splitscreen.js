@@ -36,6 +36,7 @@ export class SplitScreen {
 
   attach(karts) {
     this.dispose();
+    this.frameTimes.length = 0; // race start compiles shaders: never judge quality on those frames
     for (const kart of karts) {
       const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 3000);
       const chase = this.ChaseCameraClass ? new this.ChaseCameraClass(camera) : null;
@@ -60,61 +61,84 @@ export class SplitScreen {
    * to drawing-buffer pixels by hand double-counts the pixel ratio, which skewed the grid
    * (the top row of a 3x2 split was cut off) whenever devicePixelRatio was not 1.
    */
+  /**
+   * Canvas size in CSS pixels. Measured once and refreshed on resize: calling
+   * getBoundingClientRect() every frame forced a synchronous layout right after the six
+   * HUD panels were written (about 5% of main-thread time in a six-player race).
+   */
+  _cssSize() {
+    if (!this._cssBox || this._cssBox.stamp !== this._resizeStamp) {
+      const el = this.renderer.domElement;
+      const rect = el.getBoundingClientRect();
+      this._cssBox = {
+        w: Math.max(1, Math.round(rect.width || el.clientWidth || window.innerWidth)),
+        h: Math.max(1, Math.round(rect.height || el.clientHeight || window.innerHeight)),
+        stamp: this._resizeStamp,
+      };
+    }
+    return this._cssBox;
+  }
+  /** Called by the host on window resize (and by _applyTier) so the cached size is re-read. */
+  invalidateSize() { this._resizeStamp = (this._resizeStamp || 0) + 1; }
+
   render(scene, broadcast) {
     const r = this.renderer;
-    const el = r.domElement;
-    const rect = el.getBoundingClientRect();
-    const cssW = Math.max(1, Math.round(rect.width || el.clientWidth || window.innerWidth));
-    const cssH = Math.max(1, Math.round(rect.height || el.clientHeight || window.innerHeight));
+    const { w: cssW, h: cssH } = this._cssSize();
     r.getDrawingBufferSize(_size);
     this.lastMapping = { cssW, cssH, bw: Math.floor(_size.x), bh: Math.floor(_size.y), pixelRatio: r.getPixelRatio() };
 
+    // One world-matrix pass per displayed frame. three.js otherwise walks the whole scene
+    // graph again inside every render() call, i.e. six times per frame in split screen.
+    scene.updateMatrixWorld();
+    const autoMatrix = scene.matrixWorldAutoUpdate;
+    scene.matrixWorldAutoUpdate = false;
     r.setScissorTest(true);
     r.setClearColor(0x0b0e1a, 1);
-    if (broadcast) {
-      const c = this.cams[this.broadcastIndex];
-      r.setViewport(0, 0, cssW, cssH); r.setScissor(0, 0, cssW, cssH);
-      if (c) {
-        c.camera.aspect = cssW / cssH; c.camera.updateProjectionMatrix();
-        r.clear(); r.render(scene, c.camera);
-      } else r.clear();
+    try {
+      if (broadcast) {
+        const c = this.cams[this.broadcastIndex];
+        r.setViewport(0, 0, cssW, cssH); r.setScissor(0, 0, cssW, cssH);
+        if (c) {
+          c.camera.aspect = cssW / cssH; c.camera.updateProjectionMatrix();
+          r.clear(); r.render(scene, c.camera);
+        } else r.clear();
+        this.lastViewports = [{ x: 0, y: 0, w: cssW, h: cssH }];
+        return;
+      }
+      const layout = this.layout;
+      this.lastViewports = [];
+      for (let i = 0; i < this.cams.length; i++) {
+        const [nx, ny, nw, nh] = layout[i]; // ny measured from the top of the canvas
+        const vx = Math.round(nx * cssW);
+        const vw = Math.max(1, Math.round(nw * cssW));
+        const vyTop = Math.round(ny * cssH);
+        const vh = Math.max(1, Math.round(nh * cssH));
+        const vy = cssH - (vyTop + vh);        // GL viewport origin is bottom-left
+        const c = this.cams[i];
+        c.camera.aspect = vw / vh; c.camera.updateProjectionMatrix();
+        r.setViewport(vx, vy, vw, vh);
+        r.setScissor(vx, vy, vw, vh);
+        if (i === 0) r.clear();
+        r.render(scene, c.camera);
+        // read the viewport back out of three.js so diagnostics/tests see the real GL state,
+        // not the numbers we intended
+        r.getViewport(_vp);
+        this.lastViewports.push({
+          x: Math.round(_vp.x), w: Math.round(_vp.z),
+          y: Math.round(cssH - (_vp.y + _vp.w)), h: Math.round(_vp.w),
+        });
+      }
+    } finally {
+      scene.matrixWorldAutoUpdate = autoMatrix;
       r.setScissorTest(false);
-      this.lastViewports = [{ x: 0, y: 0, w: cssW, h: cssH }];
-      return;
     }
-    const layout = this.layout;
-    this.lastViewports = [];
-    for (let i = 0; i < this.cams.length; i++) {
-      const [nx, ny, nw, nh] = layout[i]; // ny measured from the top of the canvas
-      const vx = Math.round(nx * cssW);
-      const vw = Math.max(1, Math.round(nw * cssW));
-      const vyTop = Math.round(ny * cssH);
-      const vh = Math.max(1, Math.round(nh * cssH));
-      const vy = cssH - (vyTop + vh);        // GL viewport origin is bottom-left
-      const c = this.cams[i];
-      c.camera.aspect = vw / vh; c.camera.updateProjectionMatrix();
-      r.setViewport(vx, vy, vw, vh);
-      r.setScissor(vx, vy, vw, vh);
-      if (i === 0) r.clear();
-      r.render(scene, c.camera);
-      // read the viewport back out of three.js so diagnostics/tests see the real GL state,
-      // not the numbers we intended
-      r.getViewport(_vp);
-      this.lastViewports.push({
-        x: Math.round(_vp.x), w: Math.round(_vp.z),
-        y: Math.round(cssH - (_vp.y + _vp.w)), h: Math.round(_vp.w),
-      });
-    }
-    r.setScissorTest(false);
   }
 
   /** Render only the given camera index (diagnostics read-back), leaving its viewport set. */
   renderOne(index, scene) {
     const c = this.cams[index];
     if (!c) return;
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    const cssW = Math.max(1, Math.round(rect.width || window.innerWidth));
-    const cssH = Math.max(1, Math.round(rect.height || window.innerHeight));
+    const { w: cssW, h: cssH } = this._cssSize();
     const [nx, ny, nw, nh] = this.layout[index];
     const vx = Math.round(nx * cssW);
     const vw = Math.max(1, Math.round(nw * cssW));
@@ -126,22 +150,42 @@ export class SplitScreen {
     this.renderer.render(scene, c.camera);
   }
 
-  /** Call once per displayed frame with its ms; auto-adjust tiers. */
+  /**
+   * Call once per displayed frame with its ms; auto-adjust tiers.
+   * Judges only frames rendered at the current tier (the window is cleared on every change,
+   * so one hitch can no longer cascade straight down to the lowest tier), and recovers by
+   * probing one tier up after 4 s of clean frames. A frame-time threshold alone can never
+   * recover on a vsynced 60 Hz projector, where every frame takes ~16.7 ms however light it
+   * is. A probe that immediately misses frames is reverted and upgrades back off.
+   */
   observeFrame(ms) {
+    const now = performance.now();
     this.frameTimes.push(ms);
-    if (this.frameTimes.length > 90) this.frameTimes.shift();
-    if (this.frameTimes.length < 60) return;
-    const sorted = this.frameTimes.slice().sort((a, b) => a - b);
-    const p95 = sorted[(p95Idx(sorted.length))];
-    if (p95 > 21 && this.tierIndex < SCALE_TIERS.length - 1) {
+    if (this.frameTimes.length > 120) this.frameTimes.shift();
+    if (this.frameTimes.length < 90) return;
+    let slow = 0;
+    for (const t of this.frameTimes) if (t > 22) slow++;
+    const slowFrac = slow / this.frameTimes.length;
+    if (slowFrac > 0.1 && this.tierIndex < SCALE_TIERS.length - 1) {
+      if (this._probeAt && now - this._probeAt < 6000) {
+        this._backoff = Math.min(60000, (this._backoff || 7500) * 2);
+        this._upgradeBlockedUntil = now + this._backoff;
+      }
+      this._probeAt = 0;
+      this._lastChange = now;
       this.tierIndex++;
       this._applyTier();
-    } else if (p95 < 13 && this.tierIndex > 0 && !this._locked) {
+    } else if (slowFrac < 0.01 && this.tierIndex > 0 && !this._locked
+      && now - (this._lastChange || 0) > 4000 && now > (this._upgradeBlockedUntil || 0)) {
+      this._probeAt = now;
+      this._lastChange = now;
       this.tierIndex--;
       this._applyTier();
     }
   }
   _applyTier() {
+    this.frameTimes.length = 0;
+    this.invalidateSize();
     const scale = SCALE_TIERS[this.tierIndex];
     const el = this.renderer.domElement;
     const cssW = Math.max(320, Math.round(el.clientWidth || window.innerWidth));
@@ -167,4 +211,3 @@ export class SplitScreen {
     this.cams = [];
   }
 }
-function p95Idx(n) { return Math.min(n - 1, Math.floor(0.95 * n)); }

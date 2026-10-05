@@ -996,6 +996,46 @@ const MAX_STEPS = 4;
 let acc = 0;
 const perf = { lastT: performance.now() };
 
+// ---------------------------------------------------------------------------------------------
+// Render interpolation. Physics runs at a fixed 60 Hz but frames arrive at the display's
+// rate (and never exactly 16.67 ms apart), so without this a frame sometimes gets 0 or 2
+// physics steps and the karts judder against the smoothly damped chase cameras (worst on
+// 120/144 Hz laptop panels). Each kart is drawn between its last two physics states, then
+// its true state is restored before the next step, so the simulation itself never changes.
+// ---------------------------------------------------------------------------------------------
+const TELEPORT_DIST2 = 8 * 8; // respawns and grid placement snap instead of sliding
+function lerpAngle(a, b, t) { let d = b - a; d = Math.atan2(Math.sin(d), Math.cos(d)); return a + d * t; }
+function capturePrevPoses(w) {
+  for (const k of w.karts) {
+    if (!k._ipPrev) { k._ipPrev = new THREE.Vector3(); k._ipCur = new THREE.Vector3(); }
+    k._ipPrev.copy(k.position);
+    k._ipPrevHeading = k.heading;
+    k._ipValid = true;
+  }
+}
+function beginInterpolation(w, alpha) {
+  if (!(alpha > 0 && alpha < 1)) return false;
+  for (const k of w.karts) {
+    k._ipApplied = false;
+    if (!k._ipValid) continue;
+    k._ipCur.copy(k.position);
+    k._ipCurHeading = k.heading;
+    if (k._ipPrev.distanceToSquared(k._ipCur) > TELEPORT_DIST2) continue;
+    k.position.lerpVectors(k._ipPrev, k._ipCur, alpha);
+    k.heading = lerpAngle(k._ipPrevHeading, k._ipCurHeading, alpha);
+    k._ipApplied = true;
+  }
+  return true;
+}
+function endInterpolation(w) {
+  for (const k of w.karts) {
+    if (!k._ipApplied) continue;
+    k.position.copy(k._ipCur);
+    k.heading = k._ipCurHeading;
+    k._ipApplied = false;
+  }
+}
+
 function frame() {
   requestAnimationFrame(frame);
   const rawDt = clock.getDelta();
@@ -1003,17 +1043,31 @@ function frame() {
   safe('menu.update', () => menu.update(rawDt, resultsShown ? 'results' : state));
 
   const w = world;
-  if (w) {
-    const running = state !== 'paused' && state !== 'loading' && state !== 'boot';
-    if (running) {
-      const t0 = performance.now();
-      acc += Math.min(rawDt, 1 / 10);
-      let steps = 0;
-      while (acc >= FIXED_DT && steps < MAX_STEPS) { safe('simulate', () => simulate(w, FIXED_DT)); acc -= FIXED_DT; steps++; }
-      if (steps === MAX_STEPS) acc = 0; // drop debt after a stall so we never spiral
-      eventRadar.physicsMs = performance.now() - t0;
+  let interpolated = false;
+  try {
+    if (w) {
+      const running = state !== 'paused' && state !== 'loading' && state !== 'boot';
+      if (running) {
+        const t0 = performance.now();
+        acc += Math.min(rawDt, 1 / 10);
+        let steps = 0;
+        while (acc >= FIXED_DT && steps < MAX_STEPS) {
+          safe('interp.capture', () => capturePrevPoses(w));
+          safe('simulate', () => simulate(w, FIXED_DT)); acc -= FIXED_DT; steps++;
+        }
+        if (steps === MAX_STEPS) acc = 0; // drop debt after a stall so we never spiral
+        eventRadar.physicsMs = performance.now() - t0;
+        interpolated = !!safe('interp.begin', () => beginInterpolation(w, acc / FIXED_DT));
+      }
     }
+    renderFrame(w, dt);
+  } finally {
+    if (interpolated) safe('interp.end', () => endInterpolation(w));
+  }
+}
 
+function renderFrame(w, dt) {
+  if (w) {
     if (w.mode === 'event') {
       // prerace countdown to race start
       if (state === 'prerace') {

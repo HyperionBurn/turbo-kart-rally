@@ -435,6 +435,12 @@ function countUp(td, target) {
   };
   requestAnimationFrame(step);
 }
+/**
+ * Standard-polarity QR: dark modules on white with the 4-module quiet zone the QR spec
+ * requires. The earlier light-on-dark rendering was an inverted code with a 1-module
+ * margin; inverted decoding is optional in the spec and many phone cameras and scanner
+ * apps silently ignore it, so a share of the room could not join at all.
+ */
 function drawQr(canvas, text) {
   if (!canvas || !text) return;
   try {
@@ -442,15 +448,17 @@ function drawQr(canvas, text) {
     qr.addData(text);
     qr.make();
     const n = qr.getModuleCount();
+    const quiet = 4;
     const ctx = canvas.getContext('2d');
     const size = canvas.width;
-    const pad = 8;
-    const cell = Math.floor((size - pad * 2) / n);
-    ctx.fillStyle = '#0b0e1a';
-    ctx.fillRect(0, 0, size, size);
+    const cell = Math.max(1, Math.floor(size / (n + quiet * 2))); // whole pixels: no blurred module edges
+    const off = Math.floor((size - cell * n) / 2);
     ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = '#000000';
     for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
-      if (qr.isDark(r, c)) ctx.fillRect(pad + c * cell, pad + r * cell, cell, cell);
+      if (qr.isDark(r, c)) ctx.fillRect(off + c * cell, off + r * cell, cell, cell);
     }
+    canvas.dataset.qr = text; // what the code encodes, for the decode test and field diagnosis
   } catch {}
 }
