@@ -94,7 +94,7 @@ button { font: inherit; color: inherit; }
     linear-gradient(180deg, rgba(20,18,60,0.35) 0%, rgba(0,0,0,0) 40%, rgba(10,8,30,0.6) 100%);
 }
 .logo {
-  position: relative; z-index: 0; margin-top: 11vh; text-align: center;
+  position: relative; z-index: 0; margin-top: min(11vh, 9vw); text-align: center;
   transform: rotate(-4deg) skewX(-8deg);
   animation: logoIn 1s cubic-bezier(.2,1.6,.4,1) both, logoFloat 4s ease-in-out 1s infinite;
 }
@@ -112,14 +112,14 @@ button { font: inherit; color: inherit; }
   color: var(--ink);
 }
 .logo-line.l1 {
-  font-size: clamp(72px, 15vw, 210px);
+  font-size: clamp(64px, min(15vw, 21vh), 210px); /* by width OR height: a short laptop window overlapped the buttons */
   background-image: linear-gradient(180deg, #fff6a8 0%, #ffd23f 35%, #ff9d1f 60%, #ff5a1f 100%);
 }
 .logo-line.l1::before {
   text-shadow: 0 4px 0 #b3260a, 0 8px 0 #9a1f08, 0 12px 0 #801906, 0 16px 0 #661304, 0 22px 24px rgba(0,0,0,0.6);
 }
 .logo-line.l2 {
-  font-size: clamp(40px, 7.6vw, 108px); margin-top: 4px;
+  font-size: clamp(36px, min(7.6vw, 10.5vh), 108px); margin-top: 4px;
   background-image: linear-gradient(180deg, #e8fcff 0%, #7ee8ff 40%, #2f8bff 75%, #3b3fd8 100%);
 }
 .logo-line.l2::before {
@@ -132,7 +132,8 @@ button { font: inherit; color: inherit; }
   box-shadow: 0 0 30px rgba(255,120,40,0.6);
 }
 .press-start {
-  position: absolute; bottom: 17vh; font-family: var(--display); font-size: clamp(20px, 2.6vw, 34px);
+  /* in the flow under the buttons (it was pinned at bottom: 17vh and collided with them) */
+  position: relative; margin-top: min(3vh, 22px); font-family: var(--display); font-size: clamp(18px, min(2.6vw, 3.6vh), 34px);
   letter-spacing: 2px; text-shadow: var(--outline), 0 0 20px rgba(255,210,63,0.6);
   animation: blink 1.2s ease-in-out infinite;
 }
@@ -659,3 +660,7 @@ button { font: inherit; color: inherit; }
    which cramped the leaderboard row) */
 .event-ui .btn.ghost { font-size: 15px; padding: 9px 18px; letter-spacing: 1px; }
 .ev-board .btn { margin: 4px 6px; }
+
+/* per-player minimap: bottom-right of each split-screen panel, clear of the speed bar */
+.sp-map { position: absolute; right: 8px; bottom: 8px; width: 92px; height: 92px; border-radius: 12px; background: rgba(4,8,20,.42); pointer-events: none; }
+.sp-panel.sp-sm .sp-map { width: 70px; height: 70px; }

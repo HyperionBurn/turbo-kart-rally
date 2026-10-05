@@ -47,7 +47,8 @@ export class SplitHUD {
         <div class="sp-pos"></div>
         <div class="sp-lap"></div>
         <div class="sp-item"></div>
-        <div class="sp-speed"><i></i></div>`;
+        <div class="sp-speed"><i></i></div>
+        <canvas class="sp-map" width="216" height="216" aria-hidden="true"></canvas>`;
       this.el.appendChild(p);
       return p;
     });
@@ -61,7 +62,9 @@ export class SplitHUD {
       item: p.querySelector('.sp-item'),
       speed: p.querySelector('.sp-speed i'),
       final: p.querySelector('.sp-final'),
+      map: p.querySelector('.sp-map'),
     }));
+    this._mapBg = null; this._mapTrack = null; this._mapT = 1;
     this.cache = this.panels.map(() => ({
       posTxt: null, lapTxt: null, itemTxt: null, warnTxt: null,
       finalTxt: null, speedW: null, first: null, warnCls: null,
@@ -104,8 +107,9 @@ export class SplitHUD {
     this._flashTimers = [];
   }
 
-  update(dt, { karts, race, itemSystem }) {
+  update(dt, { karts, race, itemSystem, track }) {
     if (!karts) return;
+    this._drawMaps(dt, karts, track);
     const totalLaps = race ? race.laps : 3;
     for (let i = 0; i < karts.length && i < this.panels.length; i++) {
       const k = karts[i], p = this.panels[i], r = this.refs[i], c = this.cache[i];
@@ -182,6 +186,72 @@ export class SplitHUD {
   hide() { this.el.classList.remove('on'); }
 
   /** Broadcast camera mode: one cinematic view + a full standings strip instead of six panels. */
+  /**
+   * Per-player minimap (bottom-right of each panel): the track outline, every kart as a dot
+   * in its team colour, and this panel's own kart larger with a white ring, so each player
+   * sees at a glance who is ahead and how far back they are. Outline drawn once per track,
+   * dots redrawn ~12 times a second.
+   */
+  _drawMaps(dt, karts, track) {
+    this._mapT += dt || 0;
+    if (this._mapT < 1 / 12) return;
+    this._mapT = 0;
+    const mm = track && track.minimap;
+    if (!mm || !mm.points || mm.points.length < 2) return;
+    const S = 216, pad = 22;
+    if (this._mapTrack !== track || !this._mapBg) {
+      this._mapTrack = track;
+      const b = mm.bounds;
+      const spanX = Math.max(1, b.maxX - b.minX), spanZ = Math.max(1, b.maxZ - b.minZ);
+      const scale = (S - pad * 2) / Math.max(spanX, spanZ);
+      this._mapXf = { minX: b.minX, minZ: b.minZ, scale, ox: (S - spanX * scale) / 2, oz: (S - spanZ * scale) / 2 };
+      const c = document.createElement('canvas'); c.width = c.height = S;
+      const g = c.getContext('2d');
+      const path = () => {
+        g.beginPath();
+        mm.points.forEach((p, i) => { const [x, y] = this._mp(p.x, p.z); if (i === 0) g.moveTo(x, y); else g.lineTo(x, y); });
+        g.closePath();
+      };
+      g.lineJoin = 'round'; g.lineCap = 'round';
+      const rw = Math.max(6, (track.roadWidth || 24) * scale);
+      path(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = rw + 8; g.stroke();
+      path(); g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = rw + 3; g.stroke();
+      path(); g.strokeStyle = '#4c5a75'; g.lineWidth = rw; g.stroke();
+      const [sx, sy] = this._mp(mm.points[0].x, mm.points[0].z); // start/finish
+      g.fillStyle = '#fff'; g.fillRect(sx - 4, sy - 4, 8, 8);
+      this._mapBg = c;
+    }
+    const colorOf = (k) => {
+      const t = this.teams && k.teamId > 0 ? this.teams[k.teamId - 1] : null;
+      return t && t.color ? t.color : '#9aa3b5';
+    };
+    for (let i = 0; i < this.panels.length && i < karts.length; i++) {
+      const r = this.refs[i];
+      if (!r || !r.map) continue;
+      const g = r.map.getContext('2d');
+      g.clearRect(0, 0, S, S);
+      g.drawImage(this._mapBg, 0, 0);
+      const own = this.broadcast ? null : karts[i]; // one shared camera: nobody is "you"
+      for (const k of karts) {
+        if (k === own || !k.position) continue;
+        const [x, y] = this._mp(k.position.x, k.position.z);
+        g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2);
+        g.fillStyle = colorOf(k); g.fill();
+        g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,0.7)'; g.stroke();
+      }
+      if (own && own.position) {
+        const [x, y] = this._mp(own.position.x, own.position.z);
+        g.beginPath(); g.arc(x, y, 11, 0, Math.PI * 2);
+        g.fillStyle = colorOf(own); g.fill();
+        g.lineWidth = 4; g.strokeStyle = '#ffffff'; g.stroke();
+      }
+    }
+  }
+  _mp(x, z) {
+    const m = this._mapXf;
+    return [m.ox + (x - m.minX) * m.scale, m.oz + (z - m.minZ) * m.scale];
+  }
+
   setBroadcast(on, karts, race) {
     this.broadcast = !!on;
     this.el.classList.toggle('broadcast', this.broadcast);

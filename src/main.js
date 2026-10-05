@@ -558,7 +558,9 @@ function startEventRace() {
       world = buildEventWorld();
     } catch (e) { report('buildEventWorld', e); setEventFlow('lobby'); return; }
     eventUI.show('prerace');
-    splitHud.attach([...world.karts], eventLobby ? eventLobby.teams : []);
+    // one HUD panel per VIEW (max six); AI-fill karts have no viewport, and their extra
+    // panels used to land on top of player 1's (they still show on everyone's minimap)
+    splitHud.attach(world.karts.slice(0, 6), eventLobby ? eventLobby.teams : []);
     splitHud.show();
     split.attach(world.karts.slice(0, 6));
     audio.setGameplayActive(true);
@@ -1108,7 +1110,7 @@ function renderFrame(w, dt) {
         }
       } else if (state === 'countdown' || state === 'racing' || state === 'finished') {
         safe('split.update', () => split.update(dt, (k) => (state === 'countdown' ? 'countdown' : state === 'finished' ? 'finish' : 'race')));
-        safe('splitHud.update', () => splitHud.update(dt, { karts: world.karts, race: world.race, itemSystem: world.items }));
+        safe('splitHud.update', () => splitHud.update(dt, { karts: world.karts, race: world.race, itemSystem: world.items, track: world.track }));
       }
       safe('audio.update', () => audio.update(dt, { player: null, karts: w.karts, camera }));
       const broadcast = (eventSession && eventSession.settings && eventSession.settings.cameraMode === 'broadcast');

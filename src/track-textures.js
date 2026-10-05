@@ -91,16 +91,19 @@ export function makeCurbTexture() {
 }
 
 // Offroad band grass: tileable noisy grass with mowing stripes along v.
-export function makeGrassTexture() {
+/** Roadside verge. palette: optional { base, speckles[], flowers } (e.g. snow on Frosty Peaks). */
+export function makeGrassTexture(palette = null) {
   const W = 256, H = 256;
   const [c, ctx] = canvas(W, H);
   const rand = rng(23);
-  ctx.fillStyle = '#6fbf3f'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = (palette && palette.base) || '#6fbf3f'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(0, 0, W, H / 2);
-  speckle(ctx, W, H, 5000, ['#5eae34', '#7fcf4b', '#68b83a', '#8ad656', '#57a22f'], rand, 1, 3);
-  for (let i = 0; i < 40; i++) {
-    ctx.fillStyle = ['#ffe66b', '#ffffff', '#ff8fb1'][(rand() * 3) | 0];
-    ctx.fillRect(rand() * W, rand() * H, 2, 2);
+  speckle(ctx, W, H, 5000, (palette && palette.speckles) || ['#5eae34', '#7fcf4b', '#68b83a', '#8ad656', '#57a22f'], rand, 1, 3);
+  if (!palette || palette.flowers !== false) {
+    for (let i = 0; i < 40; i++) {
+      ctx.fillStyle = ['#ffe66b', '#ffffff', '#ff8fb1'][(rand() * 3) | 0];
+      ctx.fillRect(rand() * W, rand() * H, 2, 2);
+    }
   }
   return finish(c);
 }

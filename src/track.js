@@ -407,7 +407,7 @@ export function createTrack(scene, renderer, trackId) {
   curbGeos.forEach((g) => g.dispose());
 
   // Offroad bands (grass) + bridge deck edge (concrete)
-  const grassMat = mat(new THREE.MeshStandardMaterial({ map: TX.makeGrassTexture(), roughness: 1 }));
+  const grassMat = mat(new THREE.MeshStandardMaterial({ map: TX.makeGrassTexture((THEMES[def.theme] || {}).verge || null), roughness: 1 }));
   grassMat.map.repeat.set(1, 1);
   const concreteMat = mat(new THREE.MeshStandardMaterial({ map: TX.makeConcreteTexture(), roughness: 0.9 }));
   const bandGeos = [], deckGeos = [];
