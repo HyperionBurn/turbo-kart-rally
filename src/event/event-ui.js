@@ -318,9 +318,11 @@ export class EventUI {
       const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if (!reduced) {
         const rows = this.el.querySelectorAll('.res-row');
+        // visibility (not display) keeps the full card in the layout, so the fit-to-window
+        // scale is measured on the final size rather than on an empty card
         rows.forEach((row, i) => {
-          row.style.display = 'none';
-          setTimeout(() => { row.style.display = ''; }, 250 * (i + 1));
+          row.style.visibility = 'hidden';
+          setTimeout(() => { row.style.visibility = ''; }, 250 * (i + 1));
         });
       }
     } catch {}
