@@ -34,6 +34,7 @@ export const THEMES = {
     water: { deep: 0x2f6f9c, shallow: 0xa9e3f2, sky: 0xe3f2ff },
     greens: [0x2f6b4a, 0x3a7a55, 0x285f42, 0x447f5a, 0x336f4d, 0x4c8a62],
     mountains: { grass: 0xcfdbe8, rock: 0x7f8794, snow: 0xffffff },
+    verge: { base: '#e6eef7', speckles: ['#d5e1ee', '#f4f8fc', '#c9d7e6', '#ffffff', '#dbe6f1'], flowers: false },
     palms: false,
     flowers: false,
   },
