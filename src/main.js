@@ -527,7 +527,13 @@ function syncDrivers() {
   for (const t of eventLobby.teams) {
     const kart = w.karts.find((k) => k.teamId === t.id);
     if (!kart) continue;
-    const wantAI = t.ai || (!t.connected && t.ai);
+    // A slot that was empty when the race started keeps its AI driver until a phone takes it
+    // over. (This used to read `t.ai || (!t.connected && t.ai)`, which stripped the AI that
+    // buildEventWorld gives empty slots on the first lobby update, leaving those karts parked
+    // on the grid.) A phone that drops mid-race still coasts until the server hands its slot
+    // to AI after the reconnect window.
+    if (t.connected) kart._emptySlot = false;
+    const wantAI = t.ai || (!!kart._emptySlot && !t.connected);
     if (wantAI && !kart._ai) {
       const AIClass = mods.ai && mods.ai.AIDriver;
       kart._ai = (AIClass && safe('ai.ctor', () => new AIClass(kart, w.track, { difficulty: w.difficulty }))) || new FallbackAI(kart, w.track);
@@ -602,6 +608,7 @@ function buildEventWorld() {
     const t = teams[i];
     const kart = w.karts[i];
     if (t && (t.ai || !t.connected)) {
+      if (!t.connected) kart._emptySlot = true;
       const AIClass = mods.ai && mods.ai.AIDriver;
       const ai = (AIClass && safe('ai.ctor', () => new AIClass(kart, w.track, { difficulty: w.difficulty }))) || new FallbackAI(kart, w.track);
       kart._ai = ai;

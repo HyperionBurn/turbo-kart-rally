@@ -11,7 +11,8 @@
 //   [20] i8     steer  (-127..127 -> -1..1)
 //   [21] u8     throttle (0..255)
 //   [22] u8     brake
-//   [23] u8     flags: bit0 drift, bit1 lookBack, bit2 itemEdge, bit3 hopEdge, bit4 pauseEdge
+//   [23] u8     flags: bit0 drift, bit1 lookBack, bit2 itemEdge, bit3 hopEdge, bit4 pauseEdge,
+//                      bit5 smart steering (driver assist, held)
 // Total: 24 bytes.
 export const MAGIC = 0x54;
 export const TYPE_INPUT = 0x01;
@@ -58,6 +59,7 @@ export const FLAG_LOOKBACK = 2;
 export const FLAG_ITEM = 4;
 export const FLAG_HOP = 8;
 export const FLAG_PAUSE = 16;
+export const FLAG_ASSIST = 32;
 
 /** Decode flags into the kart input shape, edge flags consumed by host. */
 export function flagsToState(flags) {
@@ -67,5 +69,6 @@ export function flagsToState(flags) {
     itemEdge: !!(flags & FLAG_ITEM),
     hopEdge: !!(flags & FLAG_HOP),
     pauseEdge: !!(flags & FLAG_PAUSE),
+    assist: !!(flags & FLAG_ASSIST),
   };
 }

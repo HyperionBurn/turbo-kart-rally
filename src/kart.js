@@ -21,11 +21,22 @@ const AIR_GRIP = 0.4;
 const SPEED_KEEP_IN_TURN = 0.85;      // fraction of speed magnitude preserved when grip kills lateral slip
 const DRIFT_MIN_SPEED = 12;
 const DRIFT_CANCEL_SPEED = 8;
-const DRIFT_TURN_BASE = 0.62;         // drift yaw = dir * (base + span * steer*dir) * turnRate
-const DRIFT_TURN_SPAN = 0.5;
+const DRIFT_TURN_BASE = PHYSICS.driftTurnBase ?? 0.7;  // drift yaw = dir * (base + span * steer*dir) * turnRate
+const DRIFT_TURN_SPAN = PHYSICS.driftTurnSpan ?? 0.4;
 const DRIFT_TURN_MUL = 1.08;
 const DRIFT_BODY_YAW = 0.42;          // visual inward yaw while drifting
-const MINI_TURBO_STRENGTH = [0.72, 0.86, 1.0];
+const MINI_TURBO_STRENGTH = [0.75, 0.88, 1.0];
+// Rocket start (Mario Kart timing): press accelerate as the "1" appears. "held" is how long
+// the throttle has been down when GO fires; the 3-2-1 marks are one second apart.
+const ROCKET_STALL_AFTER = 1.5;       // pressed during the "2" or earlier: engine burns out
+const ROCKET_PERFECT_FROM = 0.75;     // ~0.25 s before the "1" .. GO-1.5 s: best boost
+const ROCKET_GOOD_FROM = 0.3;
+const ROCKET_SMALL_FROM = 0.05;
+// Smart steering (driver assist, on by default on phones): only acts when the kart is about
+// to leave the road, and never overrides a player who is already steering back inward.
+const ASSIST_LOOKAHEAD = 0.45;        // s of travel predicted
+const ASSIST_SAFE = 0.62;             // fraction of the road half-width that is left alone
+const ASSIST_GAIN = 2.6;
 const HOP_VELOCITY = 4.8;
 const HOP_GRAVITY = 40;
 const DRIFT_PENDING_WINDOW = 0.28;    // after hop landing, time to pick a direction while drift held
@@ -194,24 +205,31 @@ export class Kart {
 
   // ---- countdown / rocket start --------------------------------------------------------
   _onCountdown(d) {
-    if (d?.n === 1) this._countdown.oneAt = nowSec();
+    if (d?.n === 1) this._countdown.oneAt = this.time;
     if (d?.n >= 3) this._countdown.holdStart = -1;
   }
+
+  /** A human drives this kart: the solo player or an event-mode phone/gamepad team. */
+  get humanDriven() { return this.isPlayer || (this.teamId > 0 && !this._ai); }
 
   _onGo() {
     // any kart a human is driving may rocket-start (solo player or an event-mode phone);
     // AI karts never register a countdown hold, so they start normally either way.
-    if (!this.isPlayer && this._ai) return;
+    if (!this.humanDriven) return;
     const c = this._countdown;
     const thr = this._rawThrottle();
     if (thr < 0.5 || c.holdStart < 0) { c.holdStart = -1; return; }
-    const held = nowSec() - c.holdStart;
+    // simulation time, like the countdown itself: wall-clock time drifts from it whenever the
+    // host renders slower than the physics catch-up allows, turning a perfect press into a stall
+    const held = this.time - c.holdStart;
     c.holdStart = -1;
-    if (held >= 0.2 && held <= 0.95) {
+    if (held >= ROCKET_PERFECT_FROM && held <= ROCKET_STALL_AFTER) {
       this.applyBoost(1.2, 1, 'start');
-    } else if (held > 0.95 && held <= 1.3) {
-      this.applyBoost(0.5, 0.7, 'start');
-    } else if (held > 1.3) {
+    } else if (held >= ROCKET_GOOD_FROM && held < ROCKET_PERFECT_FROM) {
+      this.applyBoost(0.7, 0.85, 'start');
+    } else if (held >= ROCKET_SMALL_FROM && held < ROCKET_GOOD_FROM) {
+      this.applyBoost(0.35, 0.7, 'start');
+    } else if (held > ROCKET_STALL_AFTER) {
       // Revved too early: engine stalls with a little wobble.
       this.stallTimer = 0.9;
       this.spinTimer = 0.9;
@@ -451,16 +469,19 @@ export class Kart {
     // --- input
     const raw = this.input || neutralInput();
     const locked = this.controlsLocked && !this.finished;
-    if (locked && this.isPlayer) {
+    // (event-mode phone karts are not isPlayer; without humanDriven they never registered a
+    // hold, so the phones' rocket-start hint promised a boost that could not happen)
+    if (locked && this.humanDriven) {
       // Track throttle hold for the rocket start (main may feed neutral input while locked).
       const thr = this._rawThrottle();
-      if (thr > 0.5) { if (this._countdown.holdStart < 0) this._countdown.holdStart = nowSec(); }
+      if (thr > 0.5) { if (this._countdown.holdStart < 0) this._countdown.holdStart = this.time; }
       else this._countdown.holdStart = -1;
     }
     const disabled = locked || this.spinTimer > 0 || this.stallTimer > 0;
     let throttle = disabled ? 0 : clamp(+raw.throttle || 0, 0, 1);
     let brake = disabled ? 0 : clamp(+raw.brake || 0, 0, 1);
     let steer = disabled ? 0 : clamp(+raw.steer || 0, -1, 1);
+    if (raw.assist && !disabled) steer = this._smartSteer(steer);
     const driftHeld = !disabled && !!raw.drift;
     const driftPressed = driftHeld && !this._prevDrift;
     this._prevDrift = !disabled && !!raw.drift;
@@ -673,6 +694,39 @@ export class Kart {
     this._animate(dt, steer, throttle);
   }
 
+  /**
+   * Smart steering: predict where the kart will be ASSIST_LOOKAHEAD s from now across the
+   * road; if that is outside the safe band and still heading outward, blend toward a heading
+   * that runs parallel to the road and slightly inward. The player's own steering wins
+   * whenever it already turns back harder than the assist would.
+   */
+  _smartSteer(steer) {
+    const tr = this.track;
+    const vF = this.velocity.x * Math.sin(this.heading) + this.velocity.z * Math.cos(this.heading);
+    if (!tr?.getTangentAt || this.airborne || this.respawnTimer > 0 || vF < 6) return steer;
+    let tan;
+    try { tan = tr.getTangentAt(this.trackT); } catch { return steer; }
+    if (!tan || !fin(tan.x) || !fin(tan.z)) return steer;
+    const halfW = tr.halfWidth || (tr.roadWidth ? tr.roadWidth / 2 : 12);
+    let ang = this.heading - Math.atan2(tan.x, tan.z); // + = nose left of the road direction
+    ang = Math.atan2(Math.sin(ang), Math.cos(ang));
+    if (Math.abs(ang) > 1.75) return steer; // facing backwards: the player is turning round
+    const lat = fin(this.lateral) ? this.lateral : 0; // + = right of the centre line
+    const latRate = -vF * Math.sin(ang);
+    const latP = lat + latRate * ASSIST_LOOKAHEAD;
+    const safe = halfW * ASSIST_SAFE;
+    if (Math.abs(latP) <= safe) return steer;
+    const side = Math.sign(latP);
+    const outward = Math.sign(latRate) === side;
+    const w = clamp((Math.abs(latP) - safe) / (halfW * 0.98 - safe), 0, 1) * (outward ? 1 : 0.35);
+    if (w <= 0) return steer;
+    // heading error vs. "parallel, nosing 0.12 rad inward"; steer + turns right (heading down)
+    const assist = clamp((ang - side * 0.12) * ASSIST_GAIN, -1, 1);
+    const blended = steer + (assist - steer) * w;
+    // right edge => inward is steer < 0: keep whichever turns inward harder (and vice versa)
+    return side > 0 ? Math.min(steer, blended) : Math.max(steer, blended);
+  }
+
   _land(gh) {
     const impact = -this.velocity.y;
     this.position.y = gh;
@@ -847,9 +901,6 @@ export class Kart {
   }
 }
 
-function nowSec() {
-  return (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
-}
 
 // ---- Kart vs kart -------------------------------------------------------------------------
 export function resolveKartCollisions(karts) {

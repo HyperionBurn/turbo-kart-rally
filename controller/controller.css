@@ -186,7 +186,14 @@ header { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 34px); le
 }
 .side { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
 .side.left { flex: 1.5; } .side.right { flex: 1.1; } .side.mid { flex: .8; justify-content: stretch; }
-.pad-row { display: flex; gap: 10px; flex: 1.6; min-height: 0; }
+.pad-row { display: flex; gap: 10px; flex: 1.6; min-height: 0; position: relative; --steer: 0; touch-action: none; }
+/* analog steering needle: shows how hard you are turning while the thumb is down */
+.pad-row::after {
+  content: ''; position: absolute; top: 8px; bottom: 8px; width: 6px; border-radius: 3px; pointer-events: none;
+  left: calc(50% + var(--steer) * 50% - 3px); background: #fdd835; box-shadow: 0 0 10px rgba(253,216,53,.9);
+  opacity: 0; transition: opacity .12s;
+}
+.pad-row:has(.on)::after { opacity: .95; }
 .pad-btn {
   flex: 1; min-height: 68px; font-size: clamp(18px, 4.5vw, 24px); font-weight: 900; letter-spacing: 1px;
   background: #1b2140; border: 2px solid #323b6b; border-radius: 18px;
@@ -268,7 +275,7 @@ header { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 34px); le
 #hand-toggle { display: flex; gap: 0; border: 2px solid #2a3050; border-radius: 999px; overflow: hidden; }
 #hand-toggle button { background: transparent; padding: 6px 14px; font-size: 11px; font-weight: 900; letter-spacing: 1px; color: #8892b0; border-radius: 0; }
 #hand-toggle button.sel { background: #232a52; color: #fdd835; }
-#pref-toggles { display: flex; gap: 8px; }
+#pref-toggles { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 #pref-toggles button { background: rgba(255,255,255,.06); border: 1px solid #2a3050; border-radius: 999px; padding: 5px 12px; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #8892b0; }
 #pref-toggles button[aria-pressed="true"] { color: #69f0ae; border-color: #2e7d32; }
 #pref-toggles button[aria-pressed="false"] { color: #8892b0; }

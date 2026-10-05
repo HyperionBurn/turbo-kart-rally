@@ -56,7 +56,8 @@
       <div id="howto-full">
         <div class="howto-title">HOW TO PLAY</div>
         <div class="howto-rows">
-          <div class="howto-row"><span class="howto-key gas">GAS</span><span class="howto-desc">Hold to drive</span></div>
+          <div class="howto-row"><span class="howto-key">◀ ▶</span><span class="howto-desc">Slide your thumb: further out = sharper turn</span></div>
+          <div class="howto-row"><span class="howto-key gas">GAS</span><span class="howto-desc">Hold to drive · rocket start: press it when the 1 appears</span></div>
           <div class="howto-row"><span class="howto-key drift">DRIFT</span><span class="howto-desc">Hold in corners, release for boost</span></div>
           <div class="howto-row"><span class="howto-key item">ITEM</span><span class="howto-desc">Tap when lit</span></div>
         </div>
@@ -72,6 +73,8 @@
       <div id="pref-toggles">
         <button id="haptics-toggle" type="button" aria-pressed="true">HAPTICS ON</button>
         <button id="sound-toggle" type="button" aria-pressed="true">SOUND ON</button>
+        <button id="smart-toggle" type="button" aria-pressed="true" title="Nudges you back before you leave the road (like Mario Kart 8 Deluxe)">SMART STEER ON</button>
+        <button id="autogas-toggle" type="button" aria-pressed="false" title="Drives forward on its own; BRAKE still works">AUTO-GAS OFF</button>
       </div>
     </div>
     <div id="char-grid" role="listbox" aria-label="Choose your racer"></div>
@@ -101,7 +104,7 @@
     <div id="countdown-overlay" aria-live="assertive"></div>
     <div id="event-chip" hidden aria-live="polite"></div>
     <div id="wrongway-banner" hidden role="alert">WRONG WAY! ↩</div>
-    <div id="rocket-hint" hidden>HOLD GAS FOR BOOST! 🟢</div>
+    <div id="rocket-hint" hidden>ROCKET START: PRESS GAS WHEN THE 1 APPEARS 🟢</div>
     <div id="batt-warn" hidden>LOW BATTERY — plug in after this race</div>
     <div class="pad">
       <div class="side left">

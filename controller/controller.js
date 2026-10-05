@@ -1,6 +1,6 @@
 // Phone controller: join, lobby/select/ready, race input pad, results.
 import { CHARACTERS } from '/src/config.js';
-import { encodeInput, FLAG_DRIFT, FLAG_LOOKBACK, FLAG_ITEM, FLAG_HOP, FLAG_PAUSE } from '/src/multiplayer/protocol.js';
+import { encodeInput, FLAG_DRIFT, FLAG_LOOKBACK, FLAG_ITEM, FLAG_HOP, FLAG_PAUSE, FLAG_ASSIST } from '/src/multiplayer/protocol.js';
 import { ClockSync, LinkStats } from '/src/multiplayer/latency.js';
 
 const $ = (id) => document.getElementById(id);
@@ -311,8 +311,10 @@ function onMessage(m) {
     case 'countdown': {
       // live numbers from the host (3-2-1), not just a static "…" overlay
       const n = m.n;
+      state.countdownN = typeof n === 'number' ? n : 0;
       if (n === 'GO' || n === 0) { flashCountdown('GO!', true); buzz([0, 80, 40, 80, 40, 120]); }
-      else if (typeof n === 'number' && n > 0) { flashCountdown(String(n)); beep(440 + (3 - Math.min(n, 3)) * 110, 0.12); buzz(30); }
+      else if (typeof n === 'number' && n > 0) { flashCountdown(String(n)); beep(440 + (3 - Math.min(n, 3)) * 110, 0.12); buzz(n === 1 ? [0, 40, 30, 40] : 30); }
+      updateRocketHint();
       break;
     }
     case 'standings': {
@@ -580,13 +582,16 @@ function maybeBattWarn() {
   }
 }
 
-/** Rocket-start hint: visible only during countdown/prerace; GAS pulses with it. */
+/** Rocket-start hint: visible during countdown/prerace. GAS pulses only once the "1" is
+ *  up: pressing then gives the best boost, holding GAS from the start burns the engine out
+ *  (the old hint pulsed through the whole countdown and taught people to stall). */
 function updateRocketHint() {
   const show = state.flow === 'countdown' || state.flow === 'prerace';
+  if (!show) state.countdownN = 0;
   const h = $('rocket-hint');
   if (h) h.hidden = !show;
   const gas = $('ctl-gas');
-  if (gas) gas.classList.toggle('rocket', !!show);
+  if (gas) gas.classList.toggle('rocket', !!show && state.countdownN === 1);
 }
 
 /** Wrong-way banner: driven ONLY by the fresh standings row (wrong===true). */
@@ -973,16 +978,81 @@ const btn = { left: false, right: false, gas: false, brake: false, drift: false,
 let itemEdge = false, hopEdge = false, pauseEdge = false;
 function bindPad(id, key) {
   const el = $(id);
-  const on = (e) => { e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch {} btn[key] = true; el.classList.add('on'); buzz(8); if (key === 'item') itemEdge = true; if (key === 'drift') hopEdge = true; };
-  const off = (e) => { e.preventDefault(); btn[key] = false; el.classList.remove('on'); };
+  const on = (e) => { e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch {} btn[key] = true; el.classList.add('on'); buzz(8); if (key === 'item') itemEdge = true; if (key === 'drift') hopEdge = true; sendSoon(); };
+  const off = (e) => { e.preventDefault(); btn[key] = false; el.classList.remove('on'); sendSoon(); };
   el.addEventListener('pointerdown', on);
   el.addEventListener('pointerup', off);
   el.addEventListener('pointercancel', off);
   el.addEventListener('lostpointercapture', off);
   el.addEventListener('contextmenu', (e) => e.preventDefault());
 }
-bindPad('ctl-left', 'left'); bindPad('ctl-right', 'right'); bindPad('ctl-gas', 'gas');
+bindPad('ctl-gas', 'gas');
 bindPad('ctl-brake', 'brake'); bindPad('ctl-drift', 'drift'); bindPad('ctl-item', 'item'); bindPad('ctl-look', 'look');
+
+// Analog steering bar. The ◀ ▶ pair is one zone read by thumb position, like a stick:
+// from the middle of either button outward is full lock (tapping a button still means
+// "full turn"), sliding toward the centre gives proportionally gentler steering, and one
+// thumb can slide straight from left to right. Phones used to send only -1/0/+1, which is
+// why every corner was taken at full lock.
+const STEER_DEAD = 0.07;   // centre dead zone, as a fraction of the half-width
+const STEER_FULL = 0.5;    // full lock from here outward (the middle of each button)
+const steerRow = document.querySelector('.pad-row');
+let steerPointer = null, steerValue = 0;
+function steerFromEvent(e, fallbackDir) {
+  const r = steerRow.getBoundingClientRect();
+  const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top - 40 && e.clientY <= r.bottom + 40;
+  // synthetic events (tests, accessibility clicks) carry no usable coordinates: act as buttons
+  if (!inside && fallbackDir) return fallbackDir;
+  if (!inside && !r.width) return 0;
+  const half = Math.max(1, r.width / 2);
+  const u = Math.max(-1, Math.min(1, (e.clientX - (r.left + half)) / half));
+  const m = Math.max(0, Math.min(1, (Math.abs(u) - STEER_DEAD) / (STEER_FULL - STEER_DEAD)));
+  return Math.sign(u) * Math.pow(m, 1.2);
+}
+function setSteer(v) {
+  steerValue = Math.abs(v) < 0.02 ? 0 : v;
+  btn.left = steerValue < 0; btn.right = steerValue > 0;
+  $('ctl-left').classList.toggle('on', steerValue < 0);
+  $('ctl-right').classList.toggle('on', steerValue > 0);
+  steerRow.style.setProperty('--steer', steerValue.toFixed(3));
+  sendSoon();
+}
+for (const [id, dir] of [['ctl-left', -1], ['ctl-right', 1]]) {
+  const el = $(id);
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (steerPointer !== null && steerPointer !== e.pointerId) return; // one steering thumb
+    steerPointer = e.pointerId;
+    try { steerRow.setPointerCapture(e.pointerId); } catch {}
+    steerRow._fallbackDir = dir;
+    buzz(8);
+    setSteer(steerFromEvent(e, dir));
+  });
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+steerRow.addEventListener('pointermove', (e) => {
+  if (e.pointerId !== steerPointer) return;
+  e.preventDefault();
+  setSteer(steerFromEvent(e, 0));
+});
+const steerOff = (e) => {
+  // a real second finger lifting elsewhere must not drop the steering thumb; synthetic
+  // (untrusted) events from tests and accessibility tools always release
+  if (e.pointerId !== steerPointer && e.isTrusted) return;
+  steerPointer = null;
+  setSteer(0);
+};
+steerRow.addEventListener('pointerup', steerOff);
+steerRow.addEventListener('pointercancel', steerOff);
+steerRow.addEventListener('lostpointercapture', steerOff);
+// synthetic pointerup on a button (tests) must release too
+$('ctl-left').addEventListener('pointerup', steerOff);
+$('ctl-right').addEventListener('pointerup', steerOff);
+
+// Assists, as in Mario Kart 8 Deluxe: auto-accelerate (off by default) and smart steering
+// (on by default: only nudges you back when you are about to leave the road).
+function autoGasOn() { try { return localStorage.getItem('tkr-autogas') === '1'; } catch { return false; } }
+function smartSteerOn() { try { return localStorage.getItem('tkr-smart') !== '0'; } catch { return true; } }
 
 // Optimistic ITEM feedback: the tap feels instant (host standings confirm it).
 // Held item => flash the verb + clear the pad at once; empty pad => dull buzz + shake.
@@ -1002,17 +1072,29 @@ $('ctl-item').addEventListener('pointerdown', () => {
   }
 });
 
-// send input at ~30 Hz; edges ride on the next packet immediately too
+// send input at ~30 Hz as a heartbeat, and immediately (at most every 15 ms) whenever a
+// control changes, so a steering correction never waits for the next tick
 setInterval(() => {
   if (state.flow !== 'racing' && state.flow !== 'countdown') { itemEdge = hopEdge = pauseEdge = false; return; }
   sendInput();
 }, 33);
+let lastSendAt = 0, sendSoonTimer = 0;
+function sendSoon() {
+  if (state.flow !== 'racing' && state.flow !== 'countdown') return;
+  const wait = 15 - (performance.now() - lastSendAt);
+  if (wait <= 0) { clearTimeout(sendSoonTimer); sendSoonTimer = 0; sendInput(); }
+  else if (!sendSoonTimer) sendSoonTimer = setTimeout(() => { sendSoonTimer = 0; sendInput(); }, wait);
+}
 function sendInput() {
-  const steer = (btn.right ? 1 : 0) - (btn.left ? 1 : 0);
-  const flags = (btn.drift ? FLAG_DRIFT : 0) | (btn.look ? FLAG_LOOKBACK : 0) | (itemEdge ? FLAG_ITEM : 0) | (hopEdge ? FLAG_HOP : 0) | (pauseEdge ? FLAG_PAUSE : 0);
+  lastSendAt = performance.now();
+  const steer = steerValue;
+  // auto-accelerate only once racing: holding the throttle through the countdown would
+  // burn out the engine at the start
+  const throttle = btn.gas || (autoGasOn() && state.flow === 'racing' && !btn.brake) ? 1 : 0;
+  const flags = (btn.drift ? FLAG_DRIFT : 0) | (btn.look ? FLAG_LOOKBACK : 0) | (itemEdge ? FLAG_ITEM : 0) | (hopEdge ? FLAG_HOP : 0) | (pauseEdge ? FLAG_PAUSE : 0) | (smartSteerOn() ? FLAG_ASSIST : 0);
   const packet = encodeInput({
     teamId: state.teamId, sessionId: state.sessionId, seq: seq++,
-    timestamp: performance.now(), steer, throttle: btn.gas ? 1 : 0, brake: btn.brake ? 1 : 0, flags,
+    timestamp: performance.now(), steer, throttle, brake: btn.brake ? 1 : 0, flags,
   });
   if (state.ws && state.ws.readyState === 1) state.ws.send(packet);
   log.addUpdate(seq);
@@ -1065,10 +1147,12 @@ function applyHand() {
   return hand;
 }
 function applyPrefToggles() {
-  const h = $('haptics-toggle'), s = $('sound-toggle');
-  const hon = hapticsOn(), son = soundOn();
+  const h = $('haptics-toggle'), s = $('sound-toggle'), sm = $('smart-toggle'), ag = $('autogas-toggle');
+  const hon = hapticsOn(), son = soundOn(), smon = smartSteerOn(), agon = autoGasOn();
   if (h) { h.setAttribute('aria-pressed', hon ? 'true' : 'false'); h.textContent = hon ? 'HAPTICS ON' : 'HAPTICS OFF'; }
   if (s) { s.setAttribute('aria-pressed', son ? 'true' : 'false'); s.textContent = son ? 'SOUND ON' : 'SOUND OFF'; }
+  if (sm) { sm.setAttribute('aria-pressed', smon ? 'true' : 'false'); sm.textContent = smon ? 'SMART STEER ON' : 'SMART STEER OFF'; }
+  if (ag) { ag.setAttribute('aria-pressed', agon ? 'true' : 'false'); ag.textContent = agon ? 'AUTO-GAS ON' : 'AUTO-GAS OFF'; }
 }
 function applyHowto() {
   let dismissed = false;
@@ -1095,6 +1179,17 @@ function applyHowto() {
     try { localStorage.setItem('tkr-sound', soundOn() ? '0' : '1'); } catch {}
     applyPrefToggles(); beep(660, 0.08);
   });
+  const sm = $('smart-toggle'), ag = $('autogas-toggle');
+  if (sm) sm.addEventListener('click', (e) => {
+    e.preventDefault();
+    try { localStorage.setItem('tkr-smart', smartSteerOn() ? '0' : '1'); } catch {}
+    applyPrefToggles(); buzz(15);
+  });
+  if (ag) ag.addEventListener('click', (e) => {
+    e.preventDefault();
+    try { localStorage.setItem('tkr-autogas', autoGasOn() ? '0' : '1'); } catch {}
+    applyPrefToggles(); buzz(15);
+  });
   const gotit = $('howto-gotit'), reopen = $('howto-reopen');
   if (gotit) gotit.addEventListener('click', (e) => {
     e.preventDefault();
@@ -1110,4 +1205,4 @@ function applyHowto() {
 
 // Light-verification hook: lets a single test page dispatch synthetic inbound
 // messages and call the pure helpers without touching the network.
-window.__tkr = { state, onMessage, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, renderBoard, playFinishJingle, setItemHeld, maybeBattWarn, buzz, beep, hapticsOn, soundOn, applyHand, applyHowto, applyPrefToggles, onFlowChange, updateRocketHint, updateWrongWay, updateRaceLines, syncItemHint, renderChars, renderDetail, charTag, statNum, normalizeRoom, roomFromQuery, storedRoom, setRoom, switchRooms, updateRoomChips, showRoomStep, showNameStep, ROOM_KEY };
+window.__tkr = { state, onMessage, steerFromEvent, setSteer, get steer() { return steerValue; }, autoGasOn, smartSteerOn, ordinal, overtakeDir, lapFlashText, itemUseVerb, flashEvent, renderEnd, renderBoard, playFinishJingle, setItemHeld, maybeBattWarn, buzz, beep, hapticsOn, soundOn, applyHand, applyHowto, applyPrefToggles, onFlowChange, updateRocketHint, updateWrongWay, updateRaceLines, syncItemHint, renderChars, renderDetail, charTag, statNum, normalizeRoom, roomFromQuery, storedRoom, setRoom, switchRooms, updateRoomChips, showRoomStep, showNameStep, ROOM_KEY };

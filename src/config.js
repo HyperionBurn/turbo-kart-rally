@@ -19,8 +19,14 @@ export const PHYSICS = {
   coastDecel: 8,
   offroadMaxSpeedFactor: 0.45,
   boostSpeedBonus: 16,      // added to max speed while boosting
-  miniTurboTimes: [0.55, 0.45, 0.5], // blue, orange, purple boost durations (s)
-  driftChargeThresholds: [0.9, 1.9, 3.0], // seconds of drifting needed to reach each level
+  // Mario Kart 8 Deluxe-style reward ladder: each spark colour boosts longer than the last
+  // (the original [0.55, 0.45, 0.5] made an orange turbo shorter than a blue one).
+  miniTurboTimes: [0.5, 0.85, 1.25], // blue, orange, purple boost durations (s)
+  driftChargeThresholds: [0.75, 1.7, 2.8], // seconds of drifting needed to reach each level
+  // drift yaw = dir * (base + span * steerInto) * turnRate: steering out of the drift widens
+  // the arc but never straightens the kart (the drift is committed, as in Mario Kart)
+  driftTurnBase: 0.7,
+  driftTurnSpan: 0.4,
   mushroomBoostTime: 1.3,
   starTime: 7.5,
   spinOutTime: 1.1,
