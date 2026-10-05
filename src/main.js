@@ -412,10 +412,16 @@ function startEvent() {
 function endEvent() {
   mode = 'solo';
   eventPhase = null;
-  // drop the in-memory binding (and the flow's copy) but KEEP ?room= in the URL,
-  // so re-entering EVENT MODE reuses the same room. A new room = fresh load w/o query or NEW CODE.
+  // drop the in-memory room binding (and the flow's copy)
   eventRoom = null;
   if (eventSession) { try { delete eventSession.roomCode; } catch {} }
+  // leave solo as solo: boot() re-enters event mode for ?event / ?room, so drop them (a
+  // later EVENT MODE mints a fresh room and connected phones follow it automatically)
+  try {
+    const u = new URL(location.href);
+    u.searchParams.delete('event'); u.searchParams.delete('room');
+    history.replaceState(null, '', u.toString());
+  } catch {}
   if (eventUI) {
     if (typeof eventUI.setRoomCode === 'function') { try { eventUI.setRoomCode(null); } catch {} }
     eventUI.hide();
@@ -1375,7 +1381,7 @@ window.__game = {
   simulateFor(seconds) {
     const w = world; if (!w) return 0;
     const steps = Math.min(20000, Math.round(seconds / FIXED_DT));
-    for (let i = 0; i < steps; i++) simulate(w, FIXED_DT);
+    for (let i = 0; i < steps; i++) { capturePrevPoses(w); simulate(w, FIXED_DT); }
     return steps;
   },
   PHYSICS,

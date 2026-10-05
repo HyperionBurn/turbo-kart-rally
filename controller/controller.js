@@ -1038,7 +1038,8 @@ for (const [id, dir] of [['ctl-left', -1], ['ctl-right', 1]]) {
   const el = $(id);
   el.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    if (steerPointer !== null && steerPointer !== e.pointerId) return; // one steering thumb
+    // the newest thumb on the bar steers: if an old pointer's up/cancel was swallowed by a
+    // system gesture, ignoring new touches here would leave steering dead until a reload
     steerPointer = e.pointerId;
     try { steerRow.setPointerCapture(e.pointerId); } catch {}
     steerRow._fallbackDir = dir;
@@ -1068,8 +1069,11 @@ $('ctl-right').addEventListener('pointerup', steerOff);
 
 // Assists, as in Mario Kart 8 Deluxe: auto-accelerate (off by default) and smart steering
 // (on by default: only nudges you back when you are about to leave the road).
-function autoGasOn() { try { return localStorage.getItem('tkr-autogas') === '1'; } catch { return false; } }
-function smartSteerOn() { try { return localStorage.getItem('tkr-smart') !== '0'; } catch { return true; } }
+// read once and cached (sendInput runs up to ~60 times a second); the toggles refresh them
+let prefAutoGas = (() => { try { return localStorage.getItem('tkr-autogas') === '1'; } catch { return false; } })();
+let prefSmart = (() => { try { return localStorage.getItem('tkr-smart') !== '0'; } catch { return true; } })();
+function autoGasOn() { return prefAutoGas; }
+function smartSteerOn() { return prefSmart; }
 
 // Optimistic ITEM feedback: the tap feels instant (host standings confirm it).
 // Held item => flash the verb + clear the pad at once; empty pad => dull buzz + shake.
@@ -1201,12 +1205,14 @@ function applyHowto() {
   const sm = $('smart-toggle'), ag = $('autogas-toggle');
   if (sm) sm.addEventListener('click', (e) => {
     e.preventDefault();
-    try { localStorage.setItem('tkr-smart', smartSteerOn() ? '0' : '1'); } catch {}
+    prefSmart = !prefSmart;
+    try { localStorage.setItem('tkr-smart', prefSmart ? '1' : '0'); } catch {}
     applyPrefToggles(); buzz(15);
   });
   if (ag) ag.addEventListener('click', (e) => {
     e.preventDefault();
-    try { localStorage.setItem('tkr-autogas', autoGasOn() ? '0' : '1'); } catch {}
+    prefAutoGas = !prefAutoGas;
+    try { localStorage.setItem('tkr-autogas', prefAutoGas ? '1' : '0'); } catch {}
     applyPrefToggles(); buzz(15);
   });
   const gotit = $('howto-gotit'), reopen = $('howto-reopen');
