@@ -1175,6 +1175,10 @@ function buildItemBox() {
     transparent: true, opacity: 1, roughness: 0.08, metalness: 0.0, clearcoat: 1, clearcoatRoughness: 0.05,
     iridescence: 1, iridescenceIOR: 1.8, iridescenceThicknessRange: [200, 900],
     envMap: envMap(), envMapIntensity: 1.3, side: THREE.DoubleSide, depthWrite: false,
+    // Without this three.js draws transparent double-sided meshes in two passes and flips
+    // material.side (bumping material.version) twice per box per render, which re-resolves
+    // the shader program for all 30 boxes in every split-screen viewport, every frame.
+    forceSinglePass: true,
   }));
   const coreMat = cached('itembox:core', () => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
   const glassGeo = cachedGeo('itembox:geo', () => new RoundedBoxGeometry(size, size, size, 4, 0.16));

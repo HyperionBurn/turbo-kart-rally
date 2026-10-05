@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "turbo-kart-rally",
   "version": "1.0.0",
   "description": "**An arcade kart racer in the spirit of Mario Kart, built entirely with Three.js. Every mesh, texture, sound effect and music track is generated in code at load time. There are no asset files and no build step.**",
@@ -35,7 +35,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "jsqr": "^1.4.0",
     "playwright": "^1.63.0"
   }
 }
-

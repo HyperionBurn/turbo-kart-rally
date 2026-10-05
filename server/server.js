@@ -8,6 +8,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const dgram = require('dgram');
 const { WebSocketServer } = require('ws');
 const os = require('os');
 
@@ -40,14 +41,55 @@ function normalizeRoomCode(raw) {
 }
 
 // ---------------------------------------------------------------- utils
+// The QR code is only as good as the address it encodes. Windows laptops routinely carry
+// virtual adapters (WSL, Hyper-V, VirtualBox, VMware, Docker, VPNs) whose addresses phones
+// can never reach, and os.networkInterfaces() order is arbitrary, so "the first IPv4" is a
+// coin toss. Order: TKR_LAN_IP override > the interface that owns the default route (what
+// the OS itself would use) > physical-looking adapters > everything else.
+const LAN_IP_OVERRIDE = (() => {
+  const i = process.argv.indexOf('--lan-ip');
+  const v = (i > -1 && process.argv[i + 1]) || process.env.TKR_LAN_IP || '';
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(v) ? v : null;
+})();
+const VIRTUAL_IFACE = /vethernet|wsl|hyper-v|virtualbox|vbox|vmware|vmnet|docker|br-|veth|tailscale|zerotier|wireguard|wg\d|tun|tap|utun|npcap|loopback|bluetooth|teredo|isatap/i;
+const PHYSICAL_IFACE = /wi-?fi|wlan|wireless|ethernet|^en\d|^eth\d|^wl/i;
+let routeIp = null; // address of the default-route interface, refreshed in the background
+function refreshRouteIp() {
+  // UDP connect() sends no packet; it only asks the OS which local address would route out.
+  try {
+    const s = dgram.createSocket('udp4');
+    s.on('error', () => { try { s.close(); } catch {} });
+    s.connect(53, '1.1.1.1', () => {
+      try { const a = s.address().address; if (a && a !== '0.0.0.0' && !a.startsWith('127.')) routeIp = a; } catch {}
+      try { s.close(); } catch {}
+    });
+  } catch {}
+}
+refreshRouteIp();
+setInterval(refreshRouteIp, 15000).unref();
 function lanIps() {
   const out = [];
-  for (const ifaces of Object.values(os.networkInterfaces())) {
+  for (const [name, ifaces] of Object.entries(os.networkInterfaces())) {
     for (const i of ifaces || []) {
-      if (i.family === 'IPv4' && !i.internal) out.push(i.address);
+      if (i.family === 'IPv4' && !i.internal) out.push({ name, address: i.address });
     }
   }
-  return out;
+  const score = (e) => {
+    if (e.address === LAN_IP_OVERRIDE) return -100;
+    if (e.address === routeIp) return -50;
+    let s = 0;
+    if (VIRTUAL_IFACE.test(e.name)) s += 40;
+    if (PHYSICAL_IFACE.test(e.name)) s -= 10;
+    if (/^169\.254\./.test(e.address)) s += 60; // link-local: no DHCP, nobody can reach it
+    if (/^192\.168\./.test(e.address)) s -= 3; else if (/^10\./.test(e.address)) s -= 2; else if (/^172\./.test(e.address)) s -= 1;
+    return s;
+  };
+  const ips = out.sort((a, b) => score(a) - score(b)).map((e) => e.address);
+  if (LAN_IP_OVERRIDE && !ips.includes(LAN_IP_OVERRIDE)) ips.unshift(LAN_IP_OVERRIDE);
+  return [...new Set(ips)];
+}
+function isPrivateIpv4(h) {
+  return /^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h);
 }
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -250,20 +292,30 @@ function isPublicHost(host) {
   return true;
 }
 function netInfo(hostHeader) {
-  const ips = lanIps();
+  let ips = lanIps();
   if (isPublicHost(hostHeader)) {
     const host = String(hostHeader).split(':')[0];
     return { port: activePort, ips, public: true, controllerUrl: `https://${host}/controller` };
   }
+  // The operator opened the big screen on a LAN address: that exact address is the one
+  // they chose (and it demonstrably reaches this server), so the QR leads with it.
+  const hh = String(hostHeader || '').split(':')[0];
+  if (!LAN_IP_OVERRIDE && isPrivateIpv4(hh)) ips = [hh, ...ips.filter((ip) => ip !== hh)];
   return { port: activePort, ips, public: false, controllerUrl: ips.length ? `http://${ips[0]}:${activePort}/controller` : null };
+}
+/** Rooms whose big screen is connected right now (LAN room discovery for code-less phones). */
+function liveHostRooms() {
+  const out = [];
+  for (const room of rooms.values()) if (wsLive(room.hostWs)) out.push(room);
+  return out;
 }
 function spectatorCount(room) { let n = 0; for (const s of room.spectators) { try { if (s && s.readyState === 1) n++; } catch {} } return n; }
 function lobbyState(room) {
-  return { teams: room.teams.map(publicTeam), flow: room.session.flow, pointsTable: room.session.pointsTable, raceIndex: room.session.raceIndex, laps: room.session.settings.laps ?? 3, totalRaces: room.session.settings.raceCount || 3, spectatorCount: spectatorCount(room) };
+  return { teams: room.teams.map(publicTeam), flow: room.session.flow, pointsTable: room.session.pointsTable, raceIndex: room.session.raceIndex, laps: room.session.settings.laps ?? 3, totalRaces: room.session.settings.raceCount || 3, spectatorCount: spectatorCount(room), hostOnline: wsLive(room.hostWs) };
 }
 function hostLobbyState(room) {
   const now = Date.now();
-  return { teams: room.teams.map((t) => ({ ...publicTeam(t), lastInputAgeMs: room.lastInputAt.has(t.id) ? now - room.lastInputAt.get(t.id) : null })), flow: room.session.flow, pointsTable: room.session.pointsTable, raceIndex: room.session.raceIndex, laps: room.session.settings.laps ?? 3, totalRaces: room.session.settings.raceCount || 3, spectatorCount: spectatorCount(room) };
+  return { teams: room.teams.map((t) => ({ ...publicTeam(t), lastInputAgeMs: room.lastInputAt.has(t.id) ? now - room.lastInputAt.get(t.id) : null })), flow: room.session.flow, pointsTable: room.session.pointsTable, raceIndex: room.session.raceIndex, laps: room.session.settings.laps ?? 3, totalRaces: room.session.settings.raceCount || 3, spectatorCount: spectatorCount(room), hostOnline: wsLive(room.hostWs) };
 }
 function broadcastLobby(roomOrCode) {
   const room = (roomOrCode && roomOrCode.code && roomOrCode.teams) ? roomOrCode : getRoom(roomOrCode && roomOrCode.code ? roomOrCode.code : roomOrCode);
@@ -324,6 +376,16 @@ const server = http.createServer((req, res) => {
     const room = getRoom(roomParam);
     res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ room: room.code, flow: room.session.flow, raceIndex: room.session.raceIndex, scores: room.session.scores, slots: room.teams.map((t) => ({ id: t.id, name: t.name, connected: t.connected, sessionId: t.sessionId, token: t.reconnectToken, ai: t.ai })) }));
+    return;
+  }
+  else if (u === '/api/rooms') {
+    // LAN room discovery: a phone that arrived without ?room= (a bare /controller link, the
+    // arcade hub's QR, a typed address) finds the big screen by itself. Disabled behind a
+    // public hostname, where the room code is the household's only key.
+    const isPublic = isPublicHost(req.headers.host);
+    const live = isPublic ? [] : liveHostRooms().map((r) => ({ room: r.code, flow: r.session.flow, teams: r.teams.filter((t) => t.connected).length }));
+    res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ discovery: !isPublic, rooms: live }));
     return;
   }
   else if (u === '/controller' || u === '/controller/') file = 'controller/index.html';
@@ -395,7 +457,15 @@ function handleJson(ws, m) {
       break;
     }
     case 'join': {
-      const room = getRoom(m && m.room); // missing/invalid => default room
+      // missing/invalid => default room, except that on a LAN a code-less phone goes to the
+      // one room whose big screen is open (an old cached controller, a bare /controller link)
+      let roomArg = m && m.room;
+      const codeless = roomArg == null || (typeof roomArg === 'string' && roomArg.trim() === '');
+      if (codeless && !isPublicHost(ws._host)) {
+        const live = liveHostRooms();
+        if (!live.some((r) => r.code === DEFAULT_ROOM) && live.length === 1) roomArg = live[0].code;
+      }
+      const room = getRoom(roomArg);
       switchCleanup(ws, room.code);
       allDiagSockets.delete(ws);
       room.diagSockets.delete(ws);
@@ -623,15 +693,23 @@ function listen(port, attemptsLeft) {
   });
   server.listen(port, '0.0.0.0', () => {
     activePort = server.address().port;
-    const ips = lanIps();
-    console.log('');
-    console.log('  Turbo Kart Rally — local event server');
-    console.log('  --------------------------------------');
-    console.log(`  HOST:        http://localhost:${activePort}`);
-    for (const ip of ips) console.log(`  LAN:         http://${ip}:${activePort}`);
-    console.log(`  Controllers: http://<LAN-IP>:${activePort}/controller`);
-    console.log(`  Diagnostics: http://localhost:${activePort}/diagnostics`);
-    console.log('');
+    // give the default-route probe a moment so the banner shows the address the QR will use
+    setTimeout(() => {
+      const ips = lanIps();
+      console.log('');
+      console.log('  Turbo Kart Rally — local event server');
+      console.log('  --------------------------------------');
+      console.log(`  BIG SCREEN:  http://localhost:${activePort}        <- open this on the laptop (Chrome), press F11`);
+      if (ips.length) {
+        console.log(`  PHONES:      http://${ips[0]}:${activePort}/controller   <- the QR code encodes this`);
+        for (const ip of ips.slice(1)) console.log(`  (other):     http://${ip}:${activePort}/controller`);
+      } else {
+        console.log('  PHONES:      no network address found — connect the laptop to the Wi-Fi/hotspot, then restart');
+      }
+      console.log(`  Diagnostics: http://localhost:${activePort}/diagnostics`);
+      if (LAN_IP_OVERRIDE) console.log(`  (QR address pinned by TKR_LAN_IP / --lan-ip = ${LAN_IP_OVERRIDE})`);
+      console.log('');
+    }, 150);
   });
 }
 listen(PORT, PORT_ATTEMPTS);

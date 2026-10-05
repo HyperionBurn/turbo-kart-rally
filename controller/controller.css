@@ -320,3 +320,10 @@ header { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 34px); le
   color: #fdd835; opacity: .95; pointer-events: none; line-height: 1;
 }
 #item-use-hint[hidden] { display: none; }
+
+/* ---- big screen missing from this room (host page closed, or the code changed) ---- */
+#host-banner {
+  position: fixed; left: 8px; right: 8px; top: calc(env(safe-area-inset-top, 0px) + 40px); z-index: 60;
+  background: #ff9800; color: #111; font-weight: 900; font-size: 13px; letter-spacing: .5px;
+  text-align: center; padding: 8px 10px; border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.45);
+}

@@ -1,0 +1,124 @@
+{
+  "tag": "baseline-igpu-split-1080p",
+  "gpu": "ANGLE (Intel, Intel(R) Arc(TM) Graphics (0x00007D55) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "mode": "split",
+  "players": 6,
+  "viewport": "1920x1080",
+  "uncapped": false,
+  "durationSeconds": 20,
+  "frames": 1646,
+  "fpsAtP50": 84,
+  "frameMs": {
+    "p50": 11.9,
+    "p95": 15.7,
+    "p99": 19.6,
+    "max": 35.6,
+    "mean": 12.183414337788586
+  },
+  "physicsMs": {
+    "p50": 0.2,
+    "p95": 0.4,
+    "p99": 0.6,
+    "max": 1.2,
+    "mean": 0.1817132442284321
+  },
+  "renderSubmitMs": {
+    "p50": 9.7,
+    "p95": 12.9,
+    "p99": 16,
+    "max": 21.6,
+    "mean": 10.007715674362093
+  },
+  "adaptiveTier": 1,
+  "longFramesOver33ms": 7,
+  "scene": {
+    "drawCallsLastFrame": 89,
+    "trianglesLastFrame": 562830,
+    "geometries": 559,
+    "textures": 68,
+    "programs": 66,
+    "meshes": 500,
+    "shadowCasters": 340,
+    "pixelRatio": 0.85,
+    "jsHeapMB": 102,
+    "karts": [
+      {
+        "team": 1,
+        "ai": false,
+        "lap": 1,
+        "speed": -0.1
+      },
+      {
+        "team": 2,
+        "ai": false,
+        "lap": 1,
+        "speed": -0.1
+      },
+      {
+        "team": 3,
+        "ai": false,
+        "lap": 1,
+        "speed": 0
+      },
+      {
+        "team": 4,
+        "ai": false,
+        "lap": 1,
+        "speed": 0.8
+      },
+      {
+        "team": 5,
+        "ai": false,
+        "lap": 1,
+        "speed": -0.2
+      },
+      {
+        "team": 6,
+        "ai": false,
+        "lap": 1,
+        "speed": 0
+      }
+    ]
+  },
+  "net": {
+    "rtt": 0,
+    "p50": 0,
+    "p95": 0,
+    "p99": 0,
+    "jitter": 0,
+    "rate": 130,
+    "outOfOrder": 0,
+    "dropped": 0,
+    "disconnects": 0,
+    "reconnects": 0,
+    "teams": 6
+  },
+  "errors": [],
+  "hotFunctions": [
+    " 10.3%  (program)  :0",
+    "  7.1%  updateMatrixWorld  node_modules/three/build/three.module.js:7811",
+    "  5.2%  WebGLRenderer.renderBufferDirect  node_modules/three/build/three.module.js:29609",
+    "  5.0%  getBoundingClientRect  :0",
+    "  4.3%  (idle)  :0",
+    "  4.2%  projectObject  node_modules/three/build/three.module.js:30184",
+    "  4.0%  getParameters  node_modules/three/build/three.module.js:20650",
+    "  3.1%  bindVertexArray  :0",
+    "  3.0%  setProgram  node_modules/three/build/three.module.js:30647",
+    "  3.0%  refreshUniformsCommon  node_modules/three/build/three.module.js:28060",
+    "  2.9%  getProgram  node_modules/three/build/three.module.js:30500",
+    "  2.3%  copyArray  node_modules/three/build/three.module.js:18358",
+    "  2.2%  upload  node_modules/three/build/three.module.js:19366",
+    "  2.2%  uniformMatrix4fv  :0",
+    "  2.1%  intersectsObject  node_modules/three/build/three.module.js:13499",
+    "  2.0%  multiplyMatrices  node_modules/three/build/three.module.js:6301",
+    "  1.8%  renderObject  node_modules/three/build/three.module.js:22640",
+    "  1.5%  getBindingState  node_modules/three/build/three.module.js:15320",
+    "  1.5%  update  node_modules/three/build/three.module.js:18104",
+    "  1.3%  markUniformsLightsNeedsUpdate  node_modules/three/build/three.module.js:31054",
+    "  1.2%  setValue  node_modules/three/build/three.module.js:19240",
+    "  1.2%  needsUpdate  node_modules/three/build/three.module.js:15387",
+    "  1.2%  arraysEqual  node_modules/three/build/three.module.js:18344",
+    "  1.1%  setValue  node_modules/three/build/three.module.js:19350",
+    "  1.1%  flatten  node_modules/three/build/three.module.js:18309"
+  ]
+}
