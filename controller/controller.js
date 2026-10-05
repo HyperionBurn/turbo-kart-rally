@@ -754,7 +754,10 @@ async function fetchLiveRooms() {
     const r = await fetch('/api/rooms', { cache: 'no-store' });
     if (!r.ok) return null;
     const j = await r.json();
-    return j && j.discovery ? (Array.isArray(j.rooms) ? j.rooms : []) : null; // null: public server, code required
+    if (!j || !j.discovery) return null; // public server: the code is required
+    const rooms = Array.isArray(j.rooms) ? j.rooms : [];
+    rooms.pick = typeof j.pick === 'string' ? j.pick : null; // server's choice for code-less phones
+    return rooms;
   } catch { return null; }
 }
 async function discoverRoom() {
@@ -764,16 +767,18 @@ async function discoverRoom() {
   if (state.room || state.teamId) return; // the player typed a code meanwhile
   if (live === null) return;
   const st = $('room-status');
-  if (live.length === 1) {
-    const wasLastRoom = live[0].room === storedRoom();
-    setRoom(live[0].room, { silent: true });
+  // the server's choice: the only open big screen, else the newest one sitting in its lobby
+  const pick = live.find((r) => r.room === live.pick) || (live.length === 1 ? live[0] : null);
+  if (pick) {
+    const wasLastRoom = pick.room === storedRoom();
+    setRoom(pick.room, { silent: true });
     if (state.token && wasLastRoom) {
       // same big screen as last time and we hold a slot token: take the slot straight back
       setStatus('Reclaiming your slot…', 'ok');
       connect();
       return;
     }
-    setStatus(`Big screen found (room ${live[0].room}) — enter your team name and JOIN.`, 'ok');
+    setStatus(`Big screen found (room ${pick.room}) — enter your team name and JOIN.`, 'ok');
     return;
   }
   if (st) {
@@ -798,8 +803,9 @@ async function followMovedHost() {
   followMovedHost.busy = true;
   try {
     const live = await fetchLiveRooms();
-    if (!live || live.length !== 1 || live[0].room === state.room || !state.hostGoneAt) return;
-    const code = live[0].room;
+    const target = live ? live.find((r) => r.room === live.pick) : null;
+    if (!target || target.room === state.room || !state.hostGoneAt) return;
+    const code = target.room;
     state.room = code; state.teamId = 0; state.sessionId = 0; state.ready = false; state.hostGoneAt = 0;
     try { localStorage.setItem(ROOM_KEY, code); } catch {}
     updateRoomChips(); syncHostBanner();
