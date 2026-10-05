@@ -6,6 +6,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { bus } from './events.js';
 import { CHARACTERS, RACE, PHYSICS } from './config.js';
+import { rotatingTrackId } from './tracks.js';
 import { RaceManager } from './race.js';
 import { HUD } from './hud.js';
 import { Menu } from './menu.js';
@@ -14,6 +15,7 @@ import { HostNetworkClient } from './multiplayer/network-client.js';
 import { EventUI } from './event/event-ui.js';
 import { SplitScreen, SCALE_TIERS } from './event/splitscreen.js';
 import { SplitHUD } from './event/split-hud.js';
+import { createNameTag, disposeNameTag, TAG_LAYER_BASE } from './event/nametags.js';
 
 // ---------------------------------------------------------------------------------------------
 // Error isolation: one failing subsystem must never freeze the loop. Log once per error type.
@@ -177,11 +179,11 @@ const RACE_STATES = new Set(['intro', 'countdown', 'racing', 'finished']);
 // ---------------------------------------------------------------------------------------------
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
-function buildWorld({ mode, characterIndex = 0, difficulty = 'normal', laps = RACE.laps }) {
+function buildWorld({ mode, characterIndex = 0, difficulty = 'normal', laps = RACE.laps, track }) {
   if (!mods.track || !mods.track.createTrack) throw new Error('track.js unavailable');
   if (!mods.kart || !mods.kart.Kart) throw new Error('kart.js unavailable');
   const w = { mode, difficulty, laps, karts: [], ais: [], playerAI: null, player: null, scene: new THREE.Scene() };
-  w.track = mods.track.createTrack(w.scene, renderer);
+  w.track = mods.track.createTrack(w.scene, renderer, mode === 'race' ? track : undefined);
 
   // roster: attract mode = every character in order (kart index == character index)
   let chars;
@@ -237,6 +239,7 @@ function disposeWorld() {
   if (!w) return;
   safe('dispose.items', () => w.items && w.items.dispose && w.items.dispose());
   safe('dispose.effects', () => w.effects && w.effects.dispose && w.effects.dispose());
+  for (const k of w.karts) safe('dispose.tag', () => { disposeNameTag(k._tag); k._tag = null; });
   for (const k of w.karts) safe('dispose.kart', () => k.dispose && k.dispose());
   safe('dispose.track', () => w.track && w.track.dispose && w.track.dispose());
   safe('dispose.race', () => w.race && w.race.dispose());
@@ -574,7 +577,10 @@ function buildEventWorld() {
   const settings = (eventSession && eventSession.settings) || {};
   const speedScale = { slow: 0.85, easy: 0.9, normal: 1, fast: 1.08 }[settings.raceSpeed || 'normal'] || 1;
   const w = { mode: 'event', difficulty: settings.difficulty || 'normal', laps: settings.laps || 3, karts: [], ais: [], player: null, scene: new THREE.Scene(), speedScale };
-  w.track = mods.track.createTrack(w.scene, renderer);
+  // 'rotate' (the default) runs a different circuit each race of the championship
+  const trackId = settings.track === 'rotate' || !settings.track
+    ? rotatingTrackId((eventSession && eventSession.raceIndex) || 0) : settings.track;
+  w.track = mods.track.createTrack(w.scene, renderer, trackId);
   const teams = eventLobby ? eventLobby.teams : [];
   const { Kart } = mods.kart;
   const racers = Math.min(6, Math.max(1, teams.length));
@@ -615,6 +621,16 @@ function buildEventWorld() {
       w.ais.push(ai);
     }
   }
+  // floating name tags: team name in team colour (CPU fill karts get their racer's name in grey)
+  w.karts.forEach((kart, i) => {
+    safe('nametag', () => {
+      const t = kart.teamId > 0 ? teams.find((x) => x.id === kart.teamId) : null;
+      const tag = createNameTag(t ? t.name : `CPU · ${kart.character.name}`, t ? t.color : '#9aa3b5');
+      tag.layers.set(TAG_LAYER_BASE + i);
+      kart.object3D.add(tag);
+      kart._tag = tag;
+    });
+  });
   w.race = new RaceManager({ track: w.track, karts: w.karts, player: null, laps: w.laps, silent: false });
   const order = w.karts.slice();
   w.race.placeOnGrid(order);
@@ -723,6 +739,9 @@ function resume() {
 bus.on('race:go', () => {
   if (mode === 'event' && world && world.mode === 'event' && (eventPhase === 'countdown' || eventPhase === 'racing')) {
     eventPhase = 'racing'; setState('racing'); audio.playMusic('race');
+    // tell the server (and so every phone) the race is live: the session flow used to stay at
+    // 'countdown' all race, so phones kept the rocket-start banner over their controls
+    if (netClient) netClient.send({ type: 'hostFlow', flow: 'racing' });
     startLights.off();
     flashEventBanner('GO!');
     return;
@@ -1233,6 +1252,14 @@ async function boot() {
   menu.showTitle();
   setState('title');
   audio.playMusic('menu');
+  // Straight to the QR lobby: the server prints http://localhost:8081/?event as the BIG SCREEN
+  // link, and a big screen that already owns a room (?room=ABCD, written into the URL when the
+  // lobby opens) comes back to that same lobby after a refresh instead of the title screen,
+  // so connected phones find their big screen again.
+  try {
+    const q = new URLSearchParams(location.search);
+    if (q.has('event') || roomFromUrl()) startEvent();
+  } catch (e) { report('boot.event', e); }
 }
 boot();
 

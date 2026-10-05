@@ -1,6 +1,7 @@
 // Event Mode host UI: lobby/select, settings, prerace, results, leaderboard overlays.
 import { CHARACTERS } from '../config.js';
 import qrcode from 'qrcode-generator';
+import { TRACKS, getTrackDef, rotatingTrackId } from '../tracks.js';
 
 const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0').slice(-6);
 
@@ -21,6 +22,23 @@ export class EventUI {
     this.session = null; // last session state
     this.roomCode = null; // event room code (via setSession state.roomCode or setRoomCode)
     this.portraits = null;
+    window.addEventListener('resize', () => this._fit());
+  }
+
+  /**
+   * Fit the current screen inside the window. The lobby and settings were laid out for a
+   * 1080p projector; on a laptop (e.g. 1440x810 after Windows scaling) their top and bottom
+   * buttons fell off-screen. CSS zoom (not transform) so layout and click targets scale too.
+   */
+  _fit() {
+    const box = this.el.firstElementChild;
+    if (!box || !this.screen) return;
+    box.style.zoom = '';
+    const margin = 24;
+    const w = box.offsetWidth, h = box.offsetHeight;
+    if (!w || !h) return;
+    const s = Math.min(1, (window.innerWidth - margin * 2) / w, (window.innerHeight - margin * 2) / h);
+    if (s < 0.995) box.style.zoom = String(Math.max(0.45, +s.toFixed(3)));
   }
 
   setPortraitProvider(fn) { this.portraitFn = fn; }
@@ -92,12 +110,13 @@ export class EventUI {
 
   render() {
     switch (this.screen) {
-      case 'lobby': return this._renderLobby();
-      case 'settings': return this._renderSettings();
-      case 'prerace': return this._renderPrerace();
-      case 'results': return this._renderResults();
-      case 'leaderboard': return this._renderLeaderboard();
+      case 'lobby': this._renderLobby(); break;
+      case 'settings': this._renderSettings(); break;
+      case 'prerace': this._renderPrerace(); break;
+      case 'results': this._renderResults(); break;
+      case 'leaderboard': this._renderLeaderboard(); break;
     }
+    this._fit();
   }
 
   _updateTicker() {
@@ -169,6 +188,8 @@ export class EventUI {
     this.el.innerHTML = `
       <div class="ev-settings">
         <h2>RACE SETTINGS</h2>
+        <div class="opt-row"><span>Track</span><div>${[...TRACKS.map((t) => [t.id, t.name.toUpperCase()]), ['rotate', 'ROTATE ↻']].map(([id, label]) => `<button data-k="track" data-v="${id}" class="${(s.track || 'rotate') === id ? 'on' : ''}">${label}</button>`).join('')}</div></div>
+        <div class="opt-desc">${(s.track || 'rotate') === 'rotate' ? 'A different circuit every race: ' + TRACKS.map((t) => t.name).join(' → ') + '.' : getTrackDef(s.track).blurb}</div>
         <div class="opt-row"><span>Laps</span><div>${[1, 3, 5].map((n) => `<button data-k="laps" data-v="${n}" class="${s.laps === n ? 'on' : ''}">${n}</button>`).join('')}</div></div>
         <div class="opt-desc">How many laps each race lasts.</div>
         <div class="opt-row"><span>Difficulty</span><div>${['easy', 'normal', 'hard'].map((n) => `<button data-k="difficulty" data-v="${n}" class="${s.difficulty === n ? 'on' : ''}">${ccLabel[n]}</button>`).join('')}</div></div>
@@ -206,7 +227,7 @@ export class EventUI {
     const racers = teams.filter((t) => t.connected || t.ai);
     this.el.innerHTML = `
       <div class="ev-prerace">
-        <div class="ev-kicker">PALM COVE CIRCUIT</div>
+        <div class="ev-kicker">${preraceTrackName(sess).toUpperCase()}</div>
         <h1>RACE ${idx} OF ${total}</h1>
         <div class="ev-grid">
           ${racers.map((t) => `<div class="ev-racer" data-team="${t.id}" style="--tc:${t.color}"><b><i class="ev-dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${t.color};margin-right:8px;vertical-align:baseline"></i>${t.name}</b><span>${CHARACTERS[t.characterIdx] ? CHARACTERS[t.characterIdx].name : ''}</span><span class="ev-wait" style="display:none;font-size:12px;margin-left:6px">• waiting…</span></div>`).join('')}
@@ -374,6 +395,11 @@ function slotHtml(t) {
     </div>`;
 }
 
+function preraceTrackName(sess) {
+  const st = (sess && sess.settings) || {};
+  const id = !st.track || st.track === 'rotate' ? rotatingTrackId(sess.raceIndex || 0) : st.track;
+  return getTrackDef(id).name;
+}
 function ord(n) { return ['1st', '2nd', '3rd', '4th', '5th', '6th'][n - 1] || `${n}th`; }
 function safeRoomCode(v) {
   if (v == null) return null;

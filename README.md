@@ -1,28 +1,58 @@
-﻿# Turbo Kart Rally
+# Turbo Kart Rally
 
 **An arcade kart racer in the spirit of Mario Kart, built entirely with Three.js. Every mesh, texture, sound effect and music track is generated in code at load time. There are no asset files and no build step.**
 
 **Now also a six-player party racer.** Run one command, project it on a wall, and six teams
-scan a QR code with their phones and race each other on a true 3Ã—2 split screen â€” no app,
-no install, no accounts. See [`EVENT_RUNBOOK.md`](EVENT_RUNBOOK.md) for the event-day checklist.
+scan a QR code with their phones and race each other on a true 3×2 split screen — no app,
+no install, no accounts.
+
+## Teammates: run it on your laptop in 5 minutes
+
+You need **Node.js 20 or newer** (`node -v`), **git** and **Google Chrome** (or Edge). Windows,
+macOS and Linux all work.
 
 ```bash
+git clone https://github.com/HyperionBurn/turbo-kart-rally.git
+cd turbo-kart-rally
+git checkout six-player-party-racer   # the event build lives on this branch, not main
 npm install
 npm start
 ```
 
+The terminal prints exactly what to open:
+
 ```
-HOST:        http://localhost:8081
-LAN:         http://192.168.x.x:8080      <- phones scan the QR code on screen
-Diagnostics: http://localhost:8081/diagnostics
+  BIG SCREEN:  http://localhost:8081/?event              <- open this on the laptop (Chrome): the QR shows straight away
+  PHONES:      http://192.168.1.54:8081/controller       <- the QR code encodes this
+  Diagnostics: http://localhost:8081/diagnostics
 ```
+
+1. Open the **BIG SCREEN** link on the laptop. It goes straight to the event lobby: a big QR code and a
+   4-letter room code (opening plain `http://localhost:8081` shows the solo title screen instead; click
+   **EVENT MODE · 6 PLAYERS** there). Press F11 for full screen.
+2. Phones (same Wi-Fi as the laptop) scan the QR, type a team name, tap **JOIN RACE**, pick a racer, tap **READY**.
+3. Laptop: **CONTINUE → SETTINGS → START RACE**.
+
+That is the whole setup. If a phone cannot load the page, it is almost always the network, not
+the game — see [Troubleshooting](#troubleshooting). Event-day checklist: [`EVENT_RUNBOOK.md`](EVENT_RUNBOOK.md).
+
+**One-time checks on a new laptop**
+
+- **Windows Firewall:** the first `npm start` may pop up "Allow Node.js?" — tick the network type
+  you are on (Private, and Public if the venue Wi-Fi is marked Public) and press Allow.
+- **Use the fast GPU (laptops with NVIDIA/AMD graphics):** Chrome runs WebGL on the integrated
+  GPU by default even when the game asks for high performance (measured: see
+  [`PERFORMANCE.md`](PERFORMANCE.md)). Windows Settings → System → Display → Graphics → Google
+  Chrome → **High performance**, then restart Chrome. Also: plugged in, Best performance power mode.
+- **Same network:** phones and laptop on one Wi-Fi or hotspot. Campus/hotel guest Wi-Fi often
+  blocks phone-to-laptop traffic ("client isolation"); a phone hotspot or travel router fixes it.
 
 <p align="center">
   <a href="https://bridge-mind.github.io/turbo-kart-rally/"><img src="docs/screenshots/title.jpg" alt="Turbo Kart Rally title screen" width="800"></a>
 </p>
 
 <p align="center">
-  <a href="https://bridge-mind.github.io/turbo-kart-rally/"><strong>â–¶ Play the solo game in your browser</strong></a>
+  <a href="https://bridge-mind.github.io/turbo-kart-rally/"><strong>▶ Play the solo game in your browser</strong></a>
 </p>
 
 ## Two modes
@@ -33,9 +63,9 @@ drivers. Keyboard or gamepad.
 **Event mode** (six players on one laptop):
 
 ```text
-title â†’ EVENT MODE â†’ lobby with QR + room code â†’ six phones join, pick racers, READY
-      â†’ race settings â†’ prerace flyover â†’ 3-2-1-GO â†’ 3Ã—2 split-screen race
-      â†’ results â†’ event points â†’ session leaderboard â†’ next race / rematch
+title → EVENT MODE → lobby with QR + room code → six phones join, pick racers, READY
+      → race settings → prerace flyover → 3-2-1-GO → 3×2 split-screen race
+      → results → event points → session leaderboard → next race / rematch
 ```
 
 - Six human-controlled teams, each with its own name, colour, racer and ready state.
@@ -43,13 +73,24 @@ title â†’ EVENT MODE â†’ lobby with QR + room code â†’ six phones
   authoritatively on the host machine; phones send 24-byte input packets at 30 Hz.
 - Disconnects degrade gracefully: the kart coasts, the slot shows RECONNECTING, the host can
   hand the slot to AI after 15 s, and the same phone reclaims its team automatically when it
-  comes back â€” mid-race, without restarting.
+  comes back — mid-race, without restarting.
 - Points accumulate across races for the whole session; the leaderboard animates the totals.
 
 ## Controls
 
 Solo: keyboard or gamepad as before (see the table further down).
-Phones: landscape pad â€” left/right steer, GAS, BRAKE, DRIFT, ITEM, LOOK.
+
+Phones (event mode, landscape pad):
+
+| Control | What it does |
+| --- | --- |
+| **◀ ▶ steering bar** | Analog: from the middle of a button outward is full lock, slide toward the centre for a gentler turn. One thumb can slide straight from left to right. |
+| **GAS / BRAKE** | Drive / brake and reverse. **Rocket start:** press GAS as the **1** appears (GAS pulses then). Holding it from the start burns the engine out. |
+| **DRIFT** | Tap to hop, hold through a corner while steering: sparks go blue → orange → purple; release for a mini-turbo (purple is the longest). |
+| **ITEM** | Use the item you are holding (the button shows it). |
+| **LOOK** | Look behind. |
+| **SMART STEER** (lobby toggle, default on) | Like Mario Kart 8 Deluxe's smart steering: gently keeps you on the road when you are about to leave it, and never fights you when you are already steering back. |
+| **AUTO-GAS** (lobby toggle, default off) | Drives forward on its own once the race starts; BRAKE still works. Frees a thumb for first-timers. |
 
 ## Play (solo, online)
 
@@ -70,11 +111,11 @@ The orchestrating agent wrote an architecture contract first ([ARCHITECTURE.md](
 
 | Agent | Owns | Delivers |
 | --- | --- | --- |
-| 1 Â· World | `track.js`, `environment.js`, `track-textures.js` | Procedural circuit, barriers, boost pads, jump ramps, water, sky, scenery, grandstands, lighting |
-| 2 Â· Driving | `kart.js`, `ai.js`, `input.js` | Arcade kart physics, drift and mini-turbo, AI drivers, keyboard and gamepad input |
-| 3 Â· Items and FX | `items.js`, `effects.js` | Item boxes, roulette and eight items, pooled particle effects |
-| 4 Â· Art and camera | `models.js`, `camera.js` | Karts, drivers, item models, portraits, chase camera |
-| 5 Â· Game and UI | `main.js`, `race.js`, `hud.js`, `menu.js`, `audio.js`, `styles.css` | Game loop, race manager, HUD, menus, results, procedural audio and music |
+| 1 · World | `track.js`, `environment.js`, `track-textures.js` | Procedural circuit, barriers, boost pads, jump ramps, water, sky, scenery, grandstands, lighting |
+| 2 · Driving | `kart.js`, `ai.js`, `input.js` | Arcade kart physics, drift and mini-turbo, AI drivers, keyboard and gamepad input |
+| 3 · Items and FX | `items.js`, `effects.js` | Item boxes, roulette and eight items, pooled particle effects |
+| 4 · Art and camera | `models.js`, `camera.js` | Karts, drivers, item models, portraits, chase camera |
+| 5 · Game and UI | `main.js`, `race.js`, `hud.js`, `menu.js`, `audio.js`, `styles.css` | Game loop, race manager, HUD, menus, results, procedural audio and music |
 
 `src/config.js` (roster, physics tuning, items, difficulty, key bindings) and `src/events.js` (the event bus) were written before the sub-agents started.
 
@@ -106,6 +147,12 @@ Hold drift through a corner. Sparks turn blue, then orange, then purple. Release
 
 ## Bluetooth controllers (Xbox / PlayStation)
 
+> **Scope today:** a PS4/PS5/Xbox pad on the laptop drives **solo mode** (you vs seven AI).
+> **Event mode is phones-only**: a pad cannot take one of the six team slots yet. The
+> protocol already allows it (a pad would join as a "virtual phone" from the big-screen page,
+> roughly half a day of work); it just is not built. A pad paired to a *phone* is not read by
+> the phone controller page either (phone browsers generally only expose gamepads over https).
+
 Any XInput or standard-mapping pad works over USB **and** Bluetooth — no drivers,
 no setup. On the laptop: pair the controller in the OS Bluetooth settings first
 (Xbox: hold the pair button until the logo blinks; DualShock 4: hold PS + Share;
@@ -127,24 +174,38 @@ DualSense: hold PS + Create), then open the game in Chrome or Edge.
 
 ## Run it locally
 
-```bash
-git clone https://github.com/bridge-mind/turbo-kart-rally.git
-cd turbo-kart-rally
-npm install       # three.js (vendored locally), ws, playwright for tests
-npm start         # host + controllers + diagnostics on one port
-```
+See [Teammates: run it on your laptop in 5 minutes](#teammates-run-it-on-your-laptop-in-5-minutes).
+Three.js r170 is served from `node_modules` through an import map, so after `npm install` no
+internet connection is needed at the venue.
 
-Then open **http://localhost:8081**. Three.js r170 is served from `node_modules` through an
-import map, so no internet connection is needed at the venue. The terminal prints the
-localhost URL, every LAN URL it can find, and the diagnostics URL.
+Options (all optional):
 
-Any other static server also works for solo play (`python3 -m http.server 8080`); the
+| | |
+| --- | --- |
+| `PORT=9000 npm start` (PowerShell: `$env:PORT=9000; npm start`) | Use another port. If 8081 is busy the server tries 8082, 8083, … by itself and prints the one it got. |
+| `TKR_LAN_IP=192.168.1.20 npm start` or `npm start -- --lan-ip 192.168.1.20` | Pin the address the QR code uses (rarely needed: the server picks the adapter that owns the default route and skips WSL/Hyper-V/VPN adapters). |
+
+Any other static server also works for solo play (`python3 -m http.server 8000`); the
 phone-controller features need `npm start`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| Phone camera does not react to the QR | Scan with the phone's camera app from 1–2 m, screen brightness up. Or type the **PHONES** address the terminal printed. |
+| Phone says "This site can't be reached" | Phone and laptop are not on the same network, the Wi-Fi isolates clients, or the firewall blocked Node (see one-time checks). Test: open the PHONES address in the phone browser. |
+| Phone opened `/controller` without a code | Fine: it finds the open big screen by itself ("Big screen found (room ABCD)"). With several big screens open it asks for the 4-letter code. |
+| Phone shows an orange "Big screen not connected" bar | The laptop's game tab was closed or reloaded. Reopen it; phones reconnect on their own. If the host pressed NEW CODE, phones follow the new room automatically. |
+| "Room codes never use 0, O, 1, I or L" | The code was misread; the big screen's codes only use unambiguous letters and digits. |
+| Choppy on the projector | Set the fast GPU (one-time checks), plug in power, or Camera = BROADCAST in race settings. The game also lowers its render resolution by itself and raises it again when there is headroom. |
+| `npm test` fails instantly with "Executable doesn't exist" | Run `npx playwright install chromium` once. |
 
 ## Tests and diagnostics
 
 ```bash
-npm test                              # Playwright: full event flow, reconnect, host controls, solo regression
+npx playwright install chromium       # once per machine (downloads the test browser)
+npm test                              # Playwright: QR decode + join paths, handling, event flow, reconnect, solo regression
+node scripts/measure-gpu.cjs --gpu igpu --profile   # real-GPU six-player capture (+ CPU hot spots); --gpu dgpu for NVIDIA/AMD
 node scripts/stress.cjs --clients 40 --duration 30 --as-host   # 40 WebSocket clients vs the lobby
 node scripts/measure-host.cjs --clients 6 --duration 30 --tag six-normal   # frame/physics/render/latency capture
 ```
@@ -158,49 +219,49 @@ room-wide link table and fault-injection controls. Measured numbers live in
 
 ```
 turbo-kart-rally/
-â”œâ”€â”€ index.html            entry page and import map
-â”œâ”€â”€ ARCHITECTURE.md       module contract + event-mode design (section 6)
-â”œâ”€â”€ EVENT_RUNBOOK.md      event-day setup checklist and emergency fallbacks
-â”œâ”€â”€ PERFORMANCE.md        measured frame/render/latency numbers and limits
-â”œâ”€â”€ server/
-â”‚   â””â”€â”€ server.js         static host + controller/host WebSockets, rooms, sessions, diagnostics
-â”œâ”€â”€ controller/
-â”‚   â”œâ”€â”€ index.html        phone controller (join, racer select, ready, race pad)
-â”‚   â”œâ”€â”€ controller.js     pointer-event input, 30 Hz packets, reconnect token
-â”‚   â””â”€â”€ controller.css    landscape layout
-â”œâ”€â”€ diagnostics/
-â”‚   â””â”€â”€ index.html        room-wide link table + fault injection
-â”œâ”€â”€ src/
-â”‚   â”œâ”€â”€ main.js           renderer, post-processing, state machine, fixed-step loop, event mode
-â”‚   â”œâ”€â”€ config.js         roster, physics tuning, items, difficulty, key bindings
-â”‚   â”œâ”€â”€ events.js         shared event bus
-â”‚   â”œâ”€â”€ track.js          circuit, surfaces, walls, racing line
-â”‚   â”œâ”€â”€ environment.js    sky, lights, water, terrain, scenery
-â”‚   â”œâ”€â”€ kart.js           kart physics
-â”‚   â”œâ”€â”€ ai.js             AI drivers
-â”‚   â”œâ”€â”€ input.js          keyboard and gamepad
-â”‚   â”œâ”€â”€ items.js          item boxes, roulette, items
-â”‚   â”œâ”€â”€ effects.js        particles and bursts
-â”‚   â”œâ”€â”€ models.js         karts, drivers, item models, portraits
-â”‚   â”œâ”€â”€ camera.js         chase camera
-â”‚   â”œâ”€â”€ race.js           laps, positions, countdown, finish
-â”‚   â”œâ”€â”€ hud.js            in-race HUD and results
-â”‚   â”œâ”€â”€ menu.js           title, character select, pause
-â”‚   â”œâ”€â”€ audio.js          Web Audio sound and music
-â”‚   â”œâ”€â”€ styles.css        UI styling
-â”‚   â”œâ”€â”€ multiplayer/
-â”‚   â”‚   â”œâ”€â”€ protocol.js       24-byte binary input frame
-â”‚   â”‚   â”œâ”€â”€ latency.js        clock sync, RTT/jitter statistics
-â”‚   â”‚   â””â”€â”€ network-client.js host socket, latest-state semantics
-â”‚   â””â”€â”€ event/
-â”‚       â”œâ”€â”€ splitscreen.js    six scissored viewports, adaptive quality
-â”‚       â”œâ”€â”€ split-hud.js      compact per-viewport HUD
-â”‚       â””â”€â”€ event-ui.js       lobby / settings / prerace / results / leaderboard
-â”œâ”€â”€ scripts/              stress, measurement and manual end-to-end harnesses
-â”œâ”€â”€ tests/                Playwright suite (event flow, reconnect, solo regression)
-â”œâ”€â”€ docs/measurements/    raw JSON captured by scripts/measure-host.cjs
-â”œâ”€â”€ dev/                  per-module test harnesses from the original build
-â””â”€â”€ docs/screenshots/     images used in this README
+├── index.html            entry page and import map
+├── ARCHITECTURE.md       module contract + event-mode design (section 6)
+├── EVENT_RUNBOOK.md      event-day setup checklist and emergency fallbacks
+├── PERFORMANCE.md        measured frame/render/latency numbers and limits
+├── server/
+│   └── server.js         static host + controller/host WebSockets, rooms, sessions, diagnostics
+├── controller/
+│   ├── index.html        phone controller (join, racer select, ready, race pad)
+│   ├── controller.js     pointer-event input, 30 Hz packets, reconnect token
+│   └── controller.css    landscape layout
+├── diagnostics/
+│   └── index.html        room-wide link table + fault injection
+├── src/
+│   ├── main.js           renderer, post-processing, state machine, fixed-step loop, event mode
+│   ├── config.js         roster, physics tuning, items, difficulty, key bindings
+│   ├── events.js         shared event bus
+│   ├── track.js          circuit, surfaces, walls, racing line
+│   ├── environment.js    sky, lights, water, terrain, scenery
+│   ├── kart.js           kart physics
+│   ├── ai.js             AI drivers
+│   ├── input.js          keyboard and gamepad
+│   ├── items.js          item boxes, roulette, items
+│   ├── effects.js        particles and bursts
+│   ├── models.js         karts, drivers, item models, portraits
+│   ├── camera.js         chase camera
+│   ├── race.js           laps, positions, countdown, finish
+│   ├── hud.js            in-race HUD and results
+│   ├── menu.js           title, character select, pause
+│   ├── audio.js          Web Audio sound and music
+│   ├── styles.css        UI styling
+│   ├── multiplayer/
+│   │   ├── protocol.js       24-byte binary input frame
+│   │   ├── latency.js        clock sync, RTT/jitter statistics
+│   │   └── network-client.js host socket, latest-state semantics
+│   └── event/
+│       ├── splitscreen.js    six scissored viewports, adaptive quality
+│       ├── split-hud.js      compact per-viewport HUD
+│       └── event-ui.js       lobby / settings / prerace / results / leaderboard
+├── scripts/              stress, measurement and manual end-to-end harnesses
+├── tests/                Playwright suite (event flow, reconnect, solo regression)
+├── docs/measurements/    raw JSON captured by scripts/measure-host.cjs
+├── dev/                  per-module test harnesses from the original build
+└── docs/screenshots/     images used in this README
 ```
 
 Open `window.__game` in the browser console for debug hooks such as `startRace()`,
@@ -228,4 +289,4 @@ Turbo Kart Rally is an original, fan-made homage to the kart-racing genre. It is
 
 ## License
 
-[MIT](LICENSE) Â© 2026 BridgeMind
+[MIT](LICENSE) © 2026 BridgeMind

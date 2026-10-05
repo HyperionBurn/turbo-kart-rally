@@ -3,6 +3,12 @@ import { bus } from '../events.js';
 
 const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
 const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0').slice(-6);
+function readableOn(color) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(color || ''));
+  if (!m) return '#fff';
+  const n = parseInt(m[1], 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#111' : '#fff';
+}
 
 // Panel-width breakpoints (px) for the per-panel type scale. Measured once at
 // attach/layout time, never per frame. Thresholds are fixed pixels so a 1080p
@@ -106,8 +112,14 @@ export class SplitHUD {
       const t = this.teams && this.teams[k.teamId - 1];
       if (!p._init) {
         p._init = true;
-        r.chip.style.background = t ? t.color : hex(k.character ? k.character.color : 0x888888);
+        const tc = t ? t.color : hex(k.character ? k.character.color : 0x888888);
+        r.chip.style.background = tc;
         r.name.textContent = t ? t.name : (k.character ? k.character.name : 'RACER');
+        // each viewport is framed and badged in its team colour, so players find their own
+        // view on a projector at a glance
+        p.style.setProperty('--tc', tc);
+        r.name.style.background = tc;
+        r.name.style.color = readableOn(tc);
       }
       const posTxt = ORDINALS[(k.place || 1) - 1] || '--';
       if (c.posTxt !== posTxt) { r.pos.textContent = posTxt; c.posTxt = posTxt; }

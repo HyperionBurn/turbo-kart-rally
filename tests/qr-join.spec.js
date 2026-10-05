@@ -56,6 +56,11 @@ test('host QR decodes without inversion and lands a phone in the host room', asy
     await expect(p.page.locator('#view-lobby')).toHaveClass(/active/, { timeout: 15000 });
     await expect(host.locator('.slot.on')).toHaveCount(1, { timeout: 15000 });
     await expect(host.locator('.slot.on')).toContainText('QR TEAM');
+    // landscape phones are ~390 px tall: READY must be reachable by scrolling the lobby
+    await p.page.locator('#ready-btn').scrollIntoViewIfNeeded();
+    await expect(p.page.locator('#ready-btn')).toBeInViewport();
+    await p.page.click('#ready-btn');
+    await expect(host.locator('.slot.ready')).toHaveCount(1, { timeout: 15000 });
     expect(p.page.errors).toEqual([]);
     expect(host.errors).toEqual([]);
   } finally {

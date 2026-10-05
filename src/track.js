@@ -6,42 +6,11 @@ import { bus } from './events.js';
 import * as TX from './track-textures.js';
 import { createEnvironment } from './environment.js';
 
-const TRACK_NAME = 'Palm Cove Circuit';
-const SCALE = 1.15;
+import { getTrackDef, THEMES } from './tracks.js';
+
 const N = 2000;                 // centerline samples
 const HALF_W = 12;              // road half width (roadWidth = 24)
 const GRID_CELL = 40;
-
-// Control points [x, y, z] (x/z scaled by SCALE). Race direction = list order. CP0 = start/finish line.
-const CP = [
-  [0, 0, -60],      // 0  start / finish (main straight, heading +Z)
-  [0, 0, 60],       // 1
-  [2, 0, 175],      // 2
-  [22, 1, 258],     // 3  big sweeping left
-  [80, 3, 302],     // 4
-  [160, 5, 296],    // 5
-  [230, 6, 252],    // 6  sweeping right
-  [262, 6, 182],    // 7
-  [238, 5, 118],    // 8  S-bend
-  [292, 4, 64],     // 9
-  [258, 4, 4],      // 10
-  [296, 6, -62],    // 11 climb to the bridge
-  [304, 10, -140],  // 12 bridge over the lagoon
-  [284, 10, -212],  // 13
-  [226, 6, -262],   // 14 downhill jump
-  [150, 3, -284],   // 15
-  [66, 1, -300],    // 16
-  [-20, 0, -318],   // 17 into the hairpin
-  [-96, 0, -322],   // 18
-  [-128, 0, -292],  // 19 hairpin apex
-  [-106, 0, -256],  // 20
-  [-50, 0, -236],   // 21
-  [-8, 0, -196],    // 22
-  [0, 0, -140],     // 23
-];
-
-// Lagoon crossed by the bridge (world coords). Shared with environment.
-const LAKE = { x: 405, z: -205, r: 125 };
 const WATER_LEVEL = -1;
 
 const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -65,7 +34,13 @@ function smoothCircular(arr, radius, passes = 1) {
   return src;
 }
 
-export function createTrack(scene, renderer) {
+/** createTrack(scene, renderer, trackId?) — trackId from tracks.js; unknown ids build Palm Cove. */
+export function createTrack(scene, renderer, trackId) {
+  const def = getTrackDef(trackId);
+  const TRACK_NAME = def.name;
+  const SCALE = def.scale || 1.15;
+  const CP = def.points;
+  const LAKE = def.lake;
   const root = new THREE.Group();
   root.name = 'track';
   scene.add(root);
@@ -239,29 +214,20 @@ export function createTrack(scene, renderer) {
   const boostPads = [];
   const addPad = (sIdx, lat) => boostPads.push({ s0: ((sIdx % N) + N) % N, len: PAD_LEN, lat, hw: 2.6 });
   const padStep = Math.round(16 / ds);
-  { // cluster A — exit of the S-bend (staggered trio)
-    const i = nearestToCP(10.45);
-    addPad(i, -6); addPad(i + padStep, 0); addPad(i + padStep * 2, 6);
-  }
-  { // cluster B — hairpin exit (pair, then centre)
-    const i = nearestToCP(20.55);
-    addPad(i, -4.5); addPad(i, 4.5); addPad(i + padStep * 2, 0);
-  }
-  { // cluster C — lined up before the sweeper jump
-    const i = nearestToCP(4.15);
-    addPad(i, race[i]); addPad(i + padStep, race[(i + padStep) % N]);
+  for (const [cp, step, lat] of def.pads || []) {
+    const i = nearestToCP(cp) + (step || 0) * padStep;
+    addPad(i, lat === 'race' ? race[((i % N) + N) % N] : lat);
   }
 
   // Jump ramps
   const RAMP_LEN = Math.max(4, Math.round(9 / ds));
   const ramps = [];
   const addRamp = (sIdx, hw = 10, h = 1.7) => ramps.push({ s0: ((sIdx % N) + N) % N, len: RAMP_LEN, hw, h });
-  addRamp(nearestToCP(14.35));                // downhill after the bridge
-  addRamp(nearestToCP(4.65), 9, 1.5);         // top of the big sweeper
+  for (const [cp, hw, h] of def.ramps || []) addRamp(nearestToCP(cp), hw, h);
 
   // Item box rows
   const itemBoxPositions = [];
-  const itemRowIdx = [1.25, 6.5, 9.2, 12.5, 16.4, 21.6].map(nearestToCP);
+  const itemRowIdx = (def.itemRows || []).map(nearestToCP);
   for (const i of itemRowIdx) {
     for (const lat of [-8, -4, 0, 4, 8]) {
       itemBoxPositions.push(new THREE.Vector3(px[i] + rx[i] * lat, py[i] + 1.4, pz[i] + rz[i] * lat));
@@ -701,6 +667,7 @@ export function createTrack(scene, renderer) {
     N, ds, length, px, py, pz, rx, rz, tx, tz, head, kS, wallL, wallR, bridge, halfWidth: HALF_W,
     nearest: (x, z, noFallback = false) => { const i = nearestGrid(x, z, noFallback); return { i, d2: _nd2 }; },
     lake: LAKE, waterLevel: WATER_LEVEL,
+    theme: THEMES[def.theme] || {},
     bounds: { minX, maxX, minZ, maxZ },
     boostPads, ramps, startPositions,
   };
@@ -709,6 +676,7 @@ export function createTrack(scene, renderer) {
   // ------------------------------------------------------------------ Track object
   Object.assign(track, {
     name: TRACK_NAME,
+    id: def.id,
     curve,
     length,
     roadWidth: HALF_W * 2,

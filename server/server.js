@@ -699,7 +699,7 @@ function listen(port, attemptsLeft) {
       console.log('');
       console.log('  Turbo Kart Rally — local event server');
       console.log('  --------------------------------------');
-      console.log(`  BIG SCREEN:  http://localhost:${activePort}        <- open this on the laptop (Chrome), press F11`);
+      console.log(`  BIG SCREEN:  http://localhost:${activePort}/?event   <- open this on the laptop (Chrome): the QR shows straight away, F11 for full screen`);
       if (ips.length) {
         console.log(`  PHONES:      http://${ips[0]}:${activePort}/controller   <- the QR code encodes this`);
         for (const ip of ips.slice(1)) console.log(`  (other):     http://${ip}:${activePort}/controller`);

@@ -2,6 +2,7 @@
 // adaptive quality tiers driven by measured frame times.
 import * as THREE from 'three';
 import { bus } from '../events.js';
+import { setTagLayers, TAG_LAYER_BASE } from './nametags.js';
 
 // Layouts: arrays of [x, y, w, h] in normalized (0..1 of screen), y measured from bottom for GL but we present TL.
 const LAYOUTS = {
@@ -39,6 +40,7 @@ export class SplitScreen {
     this.frameTimes.length = 0; // race start compiles shaders: never judge quality on those frames
     for (const kart of karts) {
       const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 3000);
+      setTagLayers(camera, this.cams.length); // every name tag except the one above this camera's own kart
       const chase = this.ChaseCameraClass ? new this.ChaseCameraClass(camera) : null;
       this.cams.push({ camera, chase, kart });
       if (chase) { try { chase.snap(kart); } catch {} }
@@ -100,7 +102,10 @@ export class SplitScreen {
         r.setViewport(0, 0, cssW, cssH); r.setScissor(0, 0, cssW, cssH);
         if (c) {
           c.camera.aspect = cssW / cssH; c.camera.updateProjectionMatrix();
+          // the single broadcast camera shows every tag, including the followed kart's
+          c.camera.layers.enable(TAG_LAYER_BASE + this.broadcastIndex);
           r.clear(); r.render(scene, c.camera);
+          c.camera.layers.disable(TAG_LAYER_BASE + this.broadcastIndex);
         } else r.clear();
         this.lastViewports = [{ x: 0, y: 0, w: cssW, h: cssH }];
         return;

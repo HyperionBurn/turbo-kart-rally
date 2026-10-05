@@ -7,10 +7,11 @@ const HOST = 'http://127.0.0.1:8081';
 // Alignment needs ≥1 connected team: the lobby START guard (correctly) blocks empty
 // races. A raw socket join is enough — no browser, no rendering, no input needed.
 const WebSocket = require('ws');
-async function ensureTeam(name = 'ALIGN') {
+async function ensureTeam(name = 'ALIGN', room = null) {
   const ws = new WebSocket('ws://127.0.0.1:8081/ws');
   await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej); });
-  ws.send(JSON.stringify({ type: 'join', name }));
+  // join the host's own room (each big screen mints a room code when its lobby opens)
+  ws.send(JSON.stringify(room ? { type: 'join', name, room } : { type: 'join', name }));
   await new Promise((res, rej) => {
     const t = setTimeout(() => rej(new Error('no join reply')), 15000);
     ws.on('message', (d, b) => {
@@ -25,12 +26,13 @@ const openSlots = [];
 test.afterAll(async () => { for (const ws of openSlots.splice(0)) { try { ws.close(); } catch {} } });
 
 async function startRace(page) {
-  const slot = await ensureTeam();
-  openSlots.push(slot);
-  // free the slot when the test's page closes so later tests start clean
-  page.on('close', () => { try { slot.close(); } catch {} });
     await page.waitForFunction(() => window.__game && window.__game.state === 'title', null, { timeout: 60000 });
     await page.click('#btn-event', { force: true });
+    await page.waitForFunction(() => !!window.__game.eventRoom, null, { timeout: 20000 });
+    const slot = await ensureTeam('ALIGN', await page.evaluate(() => window.__game.eventRoom));
+    openSlots.push(slot);
+    // free the slot when the test's page closes so later tests start clean
+    page.on('close', () => { try { slot.close(); } catch {} });
     await page.waitForTimeout(500);
     // guard must be satisfied before continuing (proves the guard works, too)
     await expect(page.locator('#ev-start')).toBeEnabled({ timeout: 20000 });
