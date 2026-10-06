@@ -6,7 +6,8 @@
 //         (tightest corner radius, clearance between neighbouring parts of the track).
 // lake:   lagoon in world coordinates; wherever the road crosses it, a bridge is built.
 // pads:   boost pads as [controlPointPosition, stepsAlongTrack (16 m each), lateral | 'race'].
-// ramps:  jump ramps as [controlPointPosition, halfWidth?, height?].
+// ramps:  jump ramps as [controlPointPosition, halfWidth?, height?, kind?]; kind 'dash' is a
+//         big blue boost ramp (more air plus a boost; press drift mid-air for a trick boost).
 // itemRows: control-point positions of the five-wide item box rows.
 
 export const THEMES = {
@@ -117,7 +118,7 @@ export const TRACKS = [
     lake: { x: 470, z: -30, r: 125 },
     points: [
       [0, 0, -100], [0, 0, 40], [8, 1, 150], [55, 3, 232], [150, 4, 266], [245, 4, 236],
-      [296, 4, 152], [306, 6, 62], [322, 8, -18], [296, 6, -92], [304, 4, -172],
+      [296, 7, 152], [306, 14, 62], [322, 18, -18], [296, 11, -92], [304, 5, -172],
       [262, 3, -252], [170, 2, -292], [80, 1, -280], [28, 0, -232], [4, 0, -170],
     ],
     pads: [
@@ -125,7 +126,7 @@ export const TRACKS = [
       [9.4, 0, 'race'], [9.4, 1, 'race'],               // off the bridge
       [13.3, 0, -4], [13.3, 1, 4],                      // last-turn exit
     ],
-    ramps: [[6.4, 10, 1.6], [12.4, 10, 1.5]],
+    ramps: [[6.4, 10, 1.6], [12.4, 10, 2.4, 'dash']],
     itemRows: [1.3, 5.5, 9.0, 12.5],
   },
   {
@@ -146,7 +147,7 @@ export const TRACKS = [
       [10.4, 0, -4.5], [10.4, 0, 4.5],
       [16.3, 0, -5], [16.3, 1, 0], [16.3, 2, 5],
     ],
-    ramps: [[1.6, 10, 1.5], [15.5, 9, 1.6]],
+    ramps: [[1.6, 10, 1.5], [15.5, 9, 2.4, 'dash']],
     itemRows: [1.3, 5.0, 9.5, 13.5, 17.5],
   },
 ];
@@ -172,12 +173,12 @@ TRACKS.push(
       [17.5, 0, 0], [17.5, 1, 0], [17.5, 2, 0], // the plunger lane: launches you up the return climb
       [9.4, 0, 'race'], [12.5, 0, -4], [12.5, 1, 4],
     ],
-    ramps: [[4.5, 10, 1.6], [15.4, 9, 1.5]],
+    ramps: [[4.5, 10, 2.4, 'dash'], [15.4, 9, 1.5]],
     itemRows: [1.4, 8.5, 12.5, 16.5],
     hazards: [
       // chrome balls rolling back up the table, against the race
-      { type: 'ball', t0: 0.43, t1: 0.70, lat: -4, count: 2, speed: 0.0068, radius: 2.4 },
-      { type: 'ball', t0: 0.43, t1: 0.70, lat: 5, count: 1, speed: 0.0058, radius: 2.4 },
+      // launched from two rings above the table; they bounce, ricochet and drain at the bottom
+      { type: 'ball', t0: 0.43, t1: 0.70, chutes: [0.70, 0.585], lat: 0, count: 4, stagger: 2.2, vmax: 26, radius: 2.4 },
       // pop bumpers near the edges of the table
       { type: 'bumper', t: 0.50, lat: -8, color: 0xff3df2 },
       { type: 'bumper', t: 0.545, lat: 7.5, color: 0x00e5ff },
@@ -195,12 +196,12 @@ TRACKS.push(
     scale: 1.15,
     lake: { x: 110, z: -260, r: 95 },
     points: [
-      [0, 0, -60], [0, 0, 70], [20, 1, 150], [90, 2, 180], [190, 3, 170], [240, 4, 110], [240, 5, 10],
-      [200, 6, -50], [130, 6, -60], [90, 5, -110], [120, 4, -180], [200, 3, -210], [230, 6, -270],
+      [0, 0, -60], [0, 0, 70], [20, 3, 150], [90, 9, 180], [190, 16, 170], [240, 20, 110], [240, 18, 10],
+      [200, 12, -50], [130, 8, -60], [90, 5, -110], [120, 4, -180], [200, 3, -210], [230, 6, -270],
       [170, 8, -320], [60, 8, -320], [-30, 6, -280], [-55, 3, -210], [-4, 0, -138],
     ],
     pads: [[5.5, 0, 'race'], [10.5, 0, -4], [10.5, 0, 4]],
-    ramps: [[12.4, 10, 1.6]],
+    ramps: [[12.4, 10, 2.4, 'dash']],
     itemRows: [1.3, 4.5, 8.5, 13.5],
     hazards: [
       { type: 'crusher', t: 0.205, lat: -5, period: 3.4, phase: 0 },
@@ -223,7 +224,7 @@ TRACKS.push(
       [60, 24, -330], [-40, 26, -290], [-55, 28, -225], [-4, 29, -145],
     ],
     pads: [[7.4, 0, 'race'], [7.4, 1, 'race'], [13.6, 0, -4], [13.6, 0, 4]],
-    ramps: [[3.5, 10, 1.8], [11.5, 10, 1.7]],
+    ramps: [[3.5, 10, 2.4, 'dash'], [11.5, 10, 1.7]],
     itemRows: [1.3, 5.0, 9.5, 13.0],
     hazards: [
       { type: 'bumper', style: 'cloud', t: 0.30, lat: 7, radius: 2.0 },

@@ -1,6 +1,7 @@
 // Track hazards: the signature set-pieces of the themed circuits (tracks.js `hazards`).
 //   crusher  a stone block that hovers, slams down on a timer and flattens a kart under it
-//   ball     a chrome ball rolling down a stretch of track against the race direction
+//   ball     a chrome pinball: drops in from a launch ring, bounces, rolls downhill against
+//            the race gathering speed, ricochets off walls and karts, then drains and respawns
 //   bumper   a pop bumper (or cloud puff) that bounces karts off with a flash
 // Positions are fractions of a lap (`t`) plus a lateral offset, so they follow any layout.
 // Everything is deterministic on the race clock; kart effects use the existing hit API.
@@ -10,6 +11,17 @@ import { bus } from './events.js';
 const UP = new THREE.Vector3(0, 1, 0);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const wrap01 = (t) => ((t % 1) + 1) % 1;
+// tiny seeded RNG so every ball's chaos is repeatable run to run
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const GRAV = 34;
 
 function placeOnTrack(track, t, lat, out) {
   const p = track.getPointAt(wrap01(t));
@@ -45,7 +57,28 @@ function ballMesh(radius) {
   const m = new THREE.MeshStandardMaterial({ color: 0xdfe6f2, metalness: 1, roughness: 0.12 });
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 28, 18), m);
   mesh.castShadow = true;
+  // neon band so the ball's spin reads at speed
+  const band = new THREE.Mesh(new THREE.TorusGeometry(radius * 1.002, radius * 0.07, 6, 32),
+    new THREE.MeshStandardMaterial({ color: 0x00e5ff, emissive: 0x00e5ff, emissiveIntensity: 1.4 }));
+  mesh.add(band);
   return mesh;
+}
+
+// glowing launch ring in the sky that the balls drop out of
+function chuteMesh(radius) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xff3df2, emissive: 0xff3df2, emissiveIntensity: 1.2 });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(radius * 1.6, 0.35, 8, 36), mat);
+  ring.rotation.x = Math.PI / 2;
+  g.add(ring);
+  return { group: g, mat };
+}
+
+function dropShadow(radius) {
+  const m = new THREE.Mesh(new THREE.CircleGeometry(radius * 1.1, 24),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2;
+  return m;
 }
 
 function bumperMesh(style, radius, color) {
@@ -76,6 +109,7 @@ export function createHazards(scene, track, defs) {
   scene.add(root);
   const items = [];
   const tmp = new THREE.Vector3();
+  const rollAxis = new THREE.Vector3();
   for (const d of defs || []) {
     try {
       if (d.type === 'crusher') {
@@ -89,10 +123,26 @@ export function createHazards(scene, track, defs) {
       } else if (d.type === 'ball') {
         const radius = d.radius || 2.4;
         const count = d.count || 2;
+        const chutes = (d.chutes || [d.t1]).map((t) => {
+          const pos = new THREE.Vector3();
+          const { ground } = placeOnTrack(track, t, d.lat || 0, pos);
+          const c = chuteMesh(radius);
+          c.group.position.set(pos.x, ground + 22, pos.z);
+          root.add(c.group);
+          const item = { type: 'chute', group: c.group, mat: c.mat, glow: 0 };
+          items.push(item);
+          return { t, item };
+        });
         for (let k = 0; k < count; k++) {
           const mesh = ballMesh(radius);
-          root.add(mesh);
-          items.push({ type: 'ball', d, mesh, radius, offset: k / count });
+          const shadow = dropShadow(radius);
+          mesh.visible = false;
+          root.add(mesh, shadow);
+          items.push({
+            type: 'ball', d, mesh, shadow, radius, chutes, rand: rng(9173 * (k + 1) + Math.round((d.t0 || 0) * 1e4)),
+            phase: 'wait', wait: 0.6 + k * (d.stagger || 2.4), s: 0, lat: 0, vLat: 0, y: 0, vy: 0, v: 0, kick: 0, size: 1,
+            prev: new THREE.Vector3(), hasPrev: false,
+          });
         }
       } else if (d.type === 'bumper') {
         const radius = d.radius || 1.8;
@@ -104,6 +154,129 @@ export function createHazards(scene, track, defs) {
         items.push({ type: 'bumper', d, group, flashMat, pos, ground, radius, flash: 0, baseGlow: flashMat.emissiveIntensity });
       }
     } catch (e) { console.warn('[hazards] skipped', d, e); }
+  }
+
+  // lateral room on the road at fraction t (keep the ball inside the walls)
+  function roomAt(t, r) {
+    const N = track.N;
+    if (!N || !track.wallL || !track.wallR) return 9 - r;
+    const i = Math.floor(wrap01(t) * N) % N;
+    return Math.max(1, Math.min(Math.abs(track.wallL[i]), Math.abs(track.wallR[i])) - r - 0.6);
+  }
+
+  function spawnBall(it) {
+    const R = it.rand, d = it.d;
+    const chute = it.chutes[Math.floor(R() * it.chutes.length) % it.chutes.length];
+    it.s = chute.t;
+    it.lat = (d.lat || 0) + (R() - 0.5) * 3;
+    it.vLat = (R() - 0.5) * 14;
+    it.vy = 0;
+    it.v = 4 + R() * 4;
+    it.vmax = (d.vmax || 26) * (0.8 + R() * 0.35);
+    it.kick = 0.8 + R() * 1.6;
+    it.size = 1;
+    it.landed = false;
+    placeOnTrack(track, it.s, it.lat, tmp);
+    it.y = tmp.y + 22;
+    it.phase = 'drop';
+    it.hasPrev = false;
+    it.mesh.position.set(tmp.x, it.y, tmp.z);
+    it.mesh.visible = true;
+    it.mesh.scale.setScalar(1);
+    chute.item.glow = 1;
+  }
+
+  function updateBall(it, dt, karts) {
+    const d = it.d, r = it.radius, R = it.rand;
+    if (it.phase === 'wait') {
+      it.wait -= dt;
+      it.shadow.material.opacity = 0;
+      if (it.wait > 0) return;
+      spawnBall(it); // then fall through, so it is placed before the first frame it is seen
+    }
+    const span = wrap01(d.t1 - d.t0) || 0.1;
+    const len = track.length || 2000;
+    // along the track (downhill = against the race), accelerating like a ball on a tilted table
+    if (it.landed) it.v = Math.min(it.vmax, it.v + 7 * dt);
+    if (it.phase !== 'drain') it.s -= (it.v * dt) / len;
+    // random flipper-style kicks keep it unpredictable
+    it.kick -= dt;
+    if (it.kick <= 0 && it.phase === 'roll') {
+      it.vLat += (R() - 0.5) * 22;
+      if (R() < 0.45) it.vy = 5 + R() * 5;
+      it.kick = 0.9 + R() * 1.8;
+    }
+    it.vLat *= Math.exp(-0.25 * dt);
+    it.lat += it.vLat * dt;
+    const room = roomAt(it.s, r);
+    if (Math.abs(it.lat) > room) {
+      it.lat = Math.sign(it.lat) * room;
+      it.vLat = -it.vLat * 0.85;
+      if (Math.abs(it.vLat) > 3 && it.phase === 'roll') {
+        it.vy = Math.max(it.vy, 3.5);
+        bus.emit('hazard:ball', { position: it.mesh.position, heavy: false });
+      }
+    }
+    const { ground } = placeOnTrack(track, it.s, it.lat, tmp);
+    const floor = ground + r * it.size;
+    // vertical: gravity with damped bounces
+    if (it.phase !== 'drain') {
+      it.vy -= GRAV * dt;
+      it.y += it.vy * dt;
+      if (it.y < floor) {
+        it.y = floor;
+        if (it.vy < -5) {
+          bus.emit('hazard:ball', { position: it.mesh.position, heavy: !it.landed });
+          it.vy = -it.vy * (it.landed ? 0.35 : 0.5);
+        } else it.vy = 0;
+        if (!it.landed) { it.landed = true; it.phase = 'roll'; }
+      }
+    }
+    // drain at the bottom of the table: sink into the floor, then wait for the next launch
+    const travelled = wrap01(d.t1 - it.s);
+    if (it.phase === 'roll' && travelled > span && travelled < 0.9) it.phase = 'drain';
+    if (it.phase === 'drain') {
+      it.size = Math.max(0, it.size - dt * 1.8);
+      it.y = ground + r * it.size - (1 - it.size) * r;
+      it.mesh.scale.setScalar(Math.max(0.01, it.size));
+      if (it.size <= 0) {
+        it.mesh.visible = false;
+        it.phase = 'wait';
+        it.wait = 0.5 + R() * 2.5;
+      }
+    }
+    it.mesh.position.set(tmp.x, it.y, tmp.z);
+    // warning shadow: darker and tighter as a falling ball nears the road
+    it.shadow.position.set(tmp.x, ground + 0.07, tmp.z);
+    const above = Math.max(0, it.y - floor);
+    it.shadow.material.opacity = it.phase === 'drain' ? 0 : clamp(0.55 - above / 40, 0.15, 0.55);
+    it.shadow.scale.setScalar(clamp(1.3 - above / 30, 0.5, 1.3));
+    // roll about the axis perpendicular to how it actually moved
+    if (it.hasPrev) {
+      const mx = it.mesh.position.x - it.prev.x, mz = it.mesh.position.z - it.prev.z;
+      const dist = Math.hypot(mx, mz);
+      if (dist > 1e-4 && dist < 20) {
+        rollAxis.set(mz / dist, 0, -mx / dist);
+        it.mesh.rotateOnWorldAxis(rollAxis, dist / r);
+      }
+    }
+    it.prev.copy(it.mesh.position); it.hasPrev = true;
+    if (!it.landed) return; // still in the air above the karts
+    // hit karts: spin them out, shove them, and get deflected ourselves
+    for (const k of karts) {
+      if (!k || k.respawnTimer > 0) continue;
+      const dx = k.position.x - it.mesh.position.x, dz = k.position.z - it.mesh.position.z;
+      const rr = r * it.size + (k.radius || 1.3);
+      if (dx * dx + dz * dz < rr * rr && Math.abs(k.position.y + 0.6 - it.y) < r + 1.4) {
+        if (k.applyHit('spin')) {
+          const n = Math.hypot(dx, dz) || 1;
+          k.velocity.x += (dx / n) * 10; k.velocity.z += (dz / n) * 10;
+          it.vLat += (R() - 0.5) * 18;
+          it.vy = Math.max(it.vy, 6);
+          bus.emit('hazard:ball', { position: it.mesh.position, heavy: false });
+        }
+      }
+    }
   }
 
   function update(dt, time, karts) {
@@ -130,28 +303,12 @@ export function createHazards(scene, track, defs) {
             if (Math.abs(dx) < 3.2 && Math.abs(dz) < 3.2 && k.position.y < it.ground + h + 2.5) k.applyHit('squash');
           }
         }
+      } else if (it.type === 'chute') {
+        it.glow = Math.max(0, it.glow - dt * 2.5);
+        it.mat.emissiveIntensity = 1.2 + it.glow * 4;
+        it.group.rotation.y += dt * 1.5;
       } else if (it.type === 'ball') {
-        const d = it.d;
-        const span = wrap01(d.t1 - d.t0) || 0.1;
-        const speed = d.speed || 0.035; // laps fraction per second (against the race direction)
-        const u = wrap01(it.offset + time * speed / span);
-        const t = d.t1 - span * u;
-        const { tan, ground } = placeOnTrack(track, t, d.lat || 0, tmp);
-        it.mesh.position.set(tmp.x, ground + it.radius, tmp.z);
-        // roll: rotate about the axis perpendicular to travel
-        const axis = new THREE.Vector3().crossVectors(UP, tan).normalize();
-        it.mesh.rotateOnWorldAxis(axis, -(dt * speed * (track.length || 2000)) / it.radius);
-        for (const k of karts) {
-          if (!k || k.respawnTimer > 0) continue;
-          const dx = k.position.x - it.mesh.position.x, dz = k.position.z - it.mesh.position.z;
-          const r = it.radius + (k.radius || 1.3);
-          if (dx * dx + dz * dz < r * r && Math.abs(k.position.y - ground) < it.radius * 2) {
-            if (k.applyHit('spin')) {
-              const n = Math.hypot(dx, dz) || 1;
-              k.velocity.x += (dx / n) * 10; k.velocity.z += (dz / n) * 10;
-            }
-          }
-        }
+        updateBall(it, dt, karts);
       } else if (it.type === 'bumper') {
         if (it.flash > 0) it.flash = Math.max(0, it.flash - dt * 3);
         it.flashMat.emissiveIntensity = it.baseGlow + it.flash * 3;

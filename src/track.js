@@ -222,8 +222,11 @@ export function createTrack(scene, renderer, trackId) {
   // Jump ramps
   const RAMP_LEN = Math.max(4, Math.round(9 / ds));
   const ramps = [];
-  const addRamp = (sIdx, hw = 10, h = 1.7) => ramps.push({ s0: ((sIdx % N) + N) % N, len: RAMP_LEN, hw, h });
-  for (const [cp, hw, h] of def.ramps || []) addRamp(nearestToCP(cp), hw, h);
+  // kind 'dash': a longer, taller blue boost ramp (big air + a boost on take-off)
+  const addRamp = (sIdx, hw = 10, h = 1.7, kind = 'jump') => ramps.push({
+    s0: ((sIdx % N) + N) % N, len: kind === 'dash' ? Math.round(RAMP_LEN * 1.6) : RAMP_LEN, hw, h, kind,
+  });
+  for (const [cp, hw, h, kind] of def.ramps || []) addRamp(nearestToCP(cp), hw, h ?? (kind === 'dash' ? 2.4 : 1.7), kind);
 
   // Item box rows
   const itemBoxPositions = [];
@@ -251,6 +254,7 @@ export function createTrack(scene, renderer, trackId) {
     const normal = new THREE.Vector3(-pr.rz * Ty, pr.rz * Tx - pr.rx * Tz, pr.rx * Ty).normalize();
     const onRoad = Math.abs(lat) <= HALF_W;
     let surface = onRoad ? 'road' : 'offroad';
+    let rampKind = null;
     if (onRoad) {
       for (let k = 0; k < ramps.length; k++) {
         const r = ramps[k];
@@ -259,6 +263,7 @@ export function createTrack(scene, renderer, trackId) {
           const slope = r.h / (r.len * ds);
           height += slope * d * ds;
           surface = 'jump';
+          rampKind = r.kind;
           normal.set(normal.x - Tx * slope, normal.y - Ty * slope, normal.z - Tz * slope).normalize();
           break;
         }
@@ -270,7 +275,7 @@ export function createTrack(scene, renderer, trackId) {
         }
       }
     }
-    return { height, normal, surface, t, lateral: lat, onRoad };
+    return { height, normal, surface, t, lateral: lat, onRoad, rampKind };
   }
 
   function resolveWall(pos, radius = 1.3) {
@@ -566,18 +571,21 @@ export function createTrack(scene, renderer, trackId) {
   {
     const rampMat = mat(new THREE.MeshStandardMaterial({ map: TX.makeRampTexture(), roughness: 0.5, side: THREE.DoubleSide }));
     const sideMat = mat(new THREE.MeshStandardMaterial({ color: 0xffc21a, roughness: 0.6, side: THREE.DoubleSide }));
-    const tops = [], sides = [];
+    // dash ramps glow blue with the boost-pad chevrons, so they read as "launch" from far away
+    const dashMat = mat(new THREE.MeshStandardMaterial({ map: boostTex, color: 0x9fd4ff, emissive: 0x1e7bff, emissiveIntensity: 0.9, roughness: 0.35, side: THREE.DoubleSide }));
+    const tops = [], sides = [], dashTops = [];
     for (const r of ramps) {
       const hAt = (ii) => r.h * clamp((ii - r.s0) / r.len, 0, 1);
-      tops.push(extrude(r.s0, r.s0 + r.len, (i, ii) => [[-r.hw, hAt(ii) + 0.03], [r.hw, hAt(ii) + 0.03]], { across: [0, 1], alongScale: r.len * ds }));
+      (r.kind === 'dash' ? dashTops : tops).push(extrude(r.s0, r.s0 + r.len, (i, ii) => [[-r.hw, hAt(ii) + 0.03], [r.hw, hAt(ii) + 0.03]], { across: [0, 1], alongScale: r.kind === 'dash' ? r.len * ds / 4 : r.len * ds }));
       sides.push(extrude(r.s0, r.s0 + r.len, (i, ii) => [[r.hw, hAt(ii) + 0.03], [r.hw, -0.1]], { across: [0, 1] }));
       sides.push(extrude(r.s0, r.s0 + r.len, (i, ii) => [[-r.hw, -0.1], [-r.hw, hAt(ii) + 0.03]], { across: [0, 1] }));
       const e = (r.s0 + r.len) % N;
       sides.push(extrude(e, e + 0.001, (i, ii) => ii === e ? [[-r.hw, r.h + 0.03], [r.hw, r.h + 0.03]] : [[-r.hw, -0.1], [r.hw, -0.1]], { across: [0, 1] }));
     }
-    addMesh(mergeGeometries(tops), rampMat, { cast: true, name: 'ramps' });
-    addMesh(mergeGeometries(sides), sideMat, { cast: true, name: 'rampSides' });
-    [...tops, ...sides].forEach((g) => g.dispose());
+    if (tops.length) addMesh(mergeGeometries(tops), rampMat, { cast: true, name: 'ramps' });
+    if (dashTops.length) addMesh(mergeGeometries(dashTops), dashMat, { cast: true, name: 'dashRamps' });
+    if (sides.length) addMesh(mergeGeometries(sides), sideMat, { cast: true, name: 'rampSides' });
+    [...tops, ...dashTops, ...sides].forEach((g) => g.dispose());
   }
 
   // ------------------------------------------------------------------ start line, grid, gantry
@@ -698,7 +706,7 @@ export function createTrack(scene, renderer, trackId) {
     getRacingLine,
     // extras
     boostPads: boostPads.map((p) => ({ t: p.s0 / N, lateral: p.lat, length: p.len * ds, halfWidth: p.hw })),
-    jumpRamps: ramps.map((r) => ({ t: r.s0 / N, length: r.len * ds, halfWidth: r.hw, height: r.h })),
+    jumpRamps: ramps.map((r) => ({ t: r.s0 / N, length: r.len * ds, halfWidth: r.hw, height: r.h, kind: r.kind })),
     waterLevel: WATER_LEVEL,
     sunLight: env.sunLight,
     getWallOffsets(t) {
