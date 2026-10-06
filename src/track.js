@@ -446,6 +446,14 @@ export function createTrack(scene, renderer, trackId) {
   const wallMat = mat(new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.55 }));
   const wallTopMat = mat(new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.5 }));
   const railMat = mat(new THREE.MeshStandardMaterial({ map: TX.makeRailTexture(), roughness: 0.45 }));
+  // theme tint for barriers/rails (neon pinball walls, castle stone, sky rails)
+  const WT = (THEMES[def.theme] || {}).walls;
+  if (WT) {
+    for (const m of [wallMat, wallTopMat, railMat]) {
+      if (WT.color != null) m.color.setHex(WT.color);
+      if (WT.emissive != null) { m.emissive.setHex(WT.emissive); m.emissiveIntensity = WT.emissiveIntensity ?? 1; }
+    }
+  }
   const WALL_H = 1.25, WALL_T = 0.7, TEX_LEN = 9.6;
   const vMap = (y) => (y + 0.05) / (WALL_H + 0.05);
   const wallFaces = [], wallTops = [], railFaces = [];

@@ -519,6 +519,7 @@ export function createEnvironment(scene, renderer, root, L) {
       bodies.setColorAt(k, c.setHex(shirt[(rnd() * shirt.length) | 0]));
       heads.setColorAt(k, c.setHex(skin[(rnd() * skin.length) | 0]));
     });
+    bodies.name = 'crowd'; heads.name = 'crowd';
     root.add(bodies, heads);
   }
 
@@ -568,6 +569,7 @@ export function createEnvironment(scene, renderer, root, L) {
       flags.setColorAt(k, c.setHex(fcols[k % fcols.length]));
     });
     poles.castShadow = true;
+    poles.name = 'flags'; flags.name = 'flags';
     root.add(poles, flags);
   }
 
@@ -584,6 +586,7 @@ export function createEnvironment(scene, renderer, root, L) {
       if (colors) im.setColorAt(k, colors(it, k));
     });
     im.count = list.length;
+    im.name = 'vegetation';
     im.castShadow = cast; im.receiveShadow = true;
     root.add(im);
     return im;
@@ -765,11 +768,18 @@ export function createEnvironment(scene, renderer, root, L) {
       b.rotation.y = a + Math.PI / 2;
       b.userData = { a, r, speed: (0.004 + rnd() * 0.004) * (rnd() < 0.5 ? 1 : -1), ph: rnd() * 6 };
       b.scale.setScalar(1.6);
+      b.name = 'boat';
       root.add(b); boats.push(b);
     }
   }
 
   // ------------------------------------------------------------------ API
+  // Theme scenery switches (tracks.js): e.g. a sky track hides the island under its cloud
+  // sea, a castle hides grass and grandstands. Hidden meshes cost nothing to draw.
+  if (Array.isArray(TH.hide) && TH.hide.length) {
+    const hide = new Set(TH.hide);
+    root.traverse((o) => { if (o !== root && hide.has(o.name)) o.visible = false; });
+  }
   return {
     sunLight: sun,
     hemiLight: hemi,
