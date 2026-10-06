@@ -6,7 +6,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { bus } from './events.js';
 import { CHARACTERS, RACE, PHYSICS } from './config.js';
-import { rotatingTrackId } from './tracks.js';
+import { rotatingTrackId, getTrackDef } from './tracks.js';
+import { createHazards } from './hazards.js';
 import { RaceManager } from './race.js';
 import { HUD } from './hud.js';
 import { Menu } from './menu.js';
@@ -184,6 +185,7 @@ function buildWorld({ mode, characterIndex = 0, difficulty = 'normal', laps = RA
   if (!mods.kart || !mods.kart.Kart) throw new Error('kart.js unavailable');
   const w = { mode, difficulty, laps, karts: [], ais: [], playerAI: null, player: null, scene: new THREE.Scene() };
   w.track = mods.track.createTrack(w.scene, renderer, mode === 'race' ? track : undefined);
+  w.hazards = safe('hazards', () => createHazards(w.scene, w.track, getTrackDef(w.track.id).hazards)) || null;
 
   // roster: attract mode = every character in order (kart index == character index)
   let chars;
@@ -238,6 +240,7 @@ function disposeWorld() {
   renderPass.scene = fallbackScene;
   if (!w) return;
   safe('dispose.items', () => w.items && w.items.dispose && w.items.dispose());
+  safe('dispose.hazards', () => w.hazards && w.hazards.dispose());
   safe('dispose.effects', () => w.effects && w.effects.dispose && w.effects.dispose());
   for (const k of w.karts) safe('dispose.tag', () => { disposeNameTag(k._tag); k._tag = null; });
   for (const k of w.karts) safe('dispose.kart', () => k.dispose && k.dispose());
@@ -589,6 +592,7 @@ function buildEventWorld() {
   const trackId = settings.track === 'rotate' || !settings.track
     ? rotatingTrackId((eventSession && eventSession.raceIndex) || 0) : settings.track;
   w.track = mods.track.createTrack(w.scene, renderer, trackId);
+  w.hazards = safe('hazards', () => createHazards(w.scene, w.track, getTrackDef(w.track.id).hazards)) || null;
   const teams = eventLobby ? eventLobby.teams : [];
   const { Kart } = mods.kart;
   const racers = Math.min(6, Math.max(1, teams.length));
@@ -1012,6 +1016,7 @@ function simulate(w, dt) {
   }
   if (mods.kart && mods.kart.resolveKartCollisions) safe('resolveKartCollisions', () => mods.kart.resolveKartCollisions(w.karts));
   if (w.items) safe('items.update', () => w.items.update(dt, time));
+  if (w.hazards) safe('hazards.update', () => w.hazards.update(dt, w.race && w.race.raceTime != null ? w.race.raceTime : time, w.karts));
   safe('race.update', () => w.race.update(dt));
   if (w.effects) safe('effects.update', () => w.effects.update(dt, w.karts));
   safe('track.update', () => w.track.update && w.track.update(dt, time));

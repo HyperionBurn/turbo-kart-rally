@@ -178,6 +178,9 @@ export class AudioEngine {
     on('item:hit', (d) => { if (!isP(d.kart) && (isP(d.by) || human(d.by))) forKart(d.by, 'hitConfirm', () => this.beep(1320, 0.12, 'square', 0.08)); });
     on('item:explode', (d) => { const small = d.kind === 'small' || (d.radius != null && d.radius < 3); this.atPos(d.position, small ? 0.35 : 1, (g) => (small ? this.pop(g) : this.explosion(g))); });
     on('item:lightning', () => this.zap());
+    // track hazards (hazards.js): a heavy stone slam, and a bright pinball-bumper "ding"
+    on('hazard:slam', (d) => this.atPos(d.position, 0.9, (g) => { this.thud(g, 60); this._noise(this.ctx.currentTime, 0.25, 0.25 * g, 'lowpass', 400); }));
+    on('hazard:bumper', (d) => this.atPos(d.position, 0.7, (g) => { const t = this.ctx.currentTime; this._osc('square', 1568, t, 0.08, 0.1 * g); this._osc('triangle', 2093, t + 0.05, 0.14, 0.08 * g); }));
     on('ui:move', () => this.uiClick(0));
     on('ui:confirm', () => this.uiClick(1));
     on('ui:back', () => this.uiClick(2));

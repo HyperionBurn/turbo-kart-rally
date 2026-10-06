@@ -38,6 +38,51 @@ export const THEMES = {
     palms: false,
     flowers: false,
   },
+  // night-time pinball machine: deep violet void, neon walls, no scenery
+  neon: {
+    sky: { top: 0x0e0826, horizon: 0x3a1a6e, bottom: 0x180c38, sun: 0xff7af0 },
+    sunDir: [0.25, 0.85, -0.45],
+    hemi: { sky: 0x8a6cff, ground: 0x1a0f33, intensity: 0.8 },
+    sunLight: { color: 0xd9bcff, intensity: 1.5 },
+    envGround: 0x1a1238,
+    terrain: { g1: 0x1b1442, g2: 0x231a56, g3: 0x140e33, sand: 0x2b2060, sandWet: 0x221a4a, rock: 0x2a2452, under: 0x1a1440 },
+    water: { deep: 0x1a0838, shallow: 0x5a1fa8, sky: 0xb46cff },
+    mountains: { grass: 0x241a4a, rock: 0x2e2660, snow: 0xff5ce0 },
+    walls: { color: 0xffffff, emissive: 0xff2fd0, emissiveIntensity: 0.85 },
+    verge: { base: '#1d1546', speckles: ['#2a1d63', '#3a2a8a', '#16103a', '#00e5ff', '#ff3df2'], flowers: false },
+    hide: ['vegetation', 'grandstands', 'crowd', 'flags', 'lighthouse', 'boat', 'mountains'],
+    palms: false,
+    flowers: false,
+  },
+  // fortress over lava: ember sky, dark stone, a glowing lava lake
+  lava: {
+    sky: { top: 0x1a0505, horizon: 0x7a1f0a, bottom: 0x3a0d05, sun: 0xff8a3d },
+    sunDir: [0.3, 0.7, -0.6],
+    hemi: { sky: 0xff9a6b, ground: 0x3a1208, intensity: 0.95 },
+    sunLight: { color: 0xffb27a, intensity: 2.1 },
+    envGround: 0x2a1a14,
+    terrain: { g1: 0x2b2422, g2: 0x3a302c, g3: 0x1e1816, sand: 0x3a2a22, sandWet: 0x5a2a12, rock: 0x4a3f3a, under: 0x7a2a0a },
+    water: { deep: 0xff3d00, shallow: 0xffb020, sky: 0xff5a10 },
+    mountains: { grass: 0x2a1d18, rock: 0x3a2a24, snow: 0xff6a2a },
+    walls: { color: 0x9a948e, emissive: 0x501000, emissiveIntensity: 0.6 },
+    verge: { base: '#2e2622', speckles: ['#3a302c', '#241e1b', '#4a3f3a', '#ff6a1a', '#1c1614'], flowers: false },
+    hide: ['vegetation', 'grandstands', 'crowd', 'flags', 'lighthouse', 'boat'],
+    palms: false,
+    flowers: false,
+  },
+  // above the clouds: the whole circuit floats on decks over a cloud sea
+  sky: {
+    sky: { top: 0x3d8be8, horizon: 0xdff1ff, bottom: 0xffffff, sun: 0xfff6dd },
+    sunDir: [0.35, 0.75, -0.55],
+    hemi: { sky: 0xe9f4ff, ground: 0xffffff, intensity: 1.4 },
+    sunLight: { color: 0xfff4e0, intensity: 2.6 },
+    envGround: 0xffffff,
+    water: { deep: 0xc9d9ee, shallow: 0xffffff, sky: 0xffffff },
+    walls: { color: 0xffffff, emissive: 0x3d6bd8, emissiveIntensity: 0.25 },
+    hide: ['terrain', 'vegetation', 'grandstands', 'crowd', 'flags', 'lighthouse', 'boat', 'mountains'],
+    palms: false,
+    flowers: false,
+  },
 };
 
 export const TRACKS = [
@@ -106,7 +151,93 @@ export const TRACKS = [
   },
 ];
 
+// Original circuits in the spirit of three classic kart-racer themes (names, layouts and
+// art are our own): a night-time pinball machine, a fortress over lava, a skyway above the
+// clouds. Hazards (hazards.js) carry each one's signature set-piece.
+TRACKS.push(
+  {
+    id: 'pinball-palace',
+    name: 'Pinball Palace',
+    blurb: 'Neon pinball table · rolling balls, pop bumpers, plunger launch',
+    theme: 'neon',
+    scale: 1.15,
+    lake: { x: 900, z: 900, r: 10 },
+    points: [
+      [200, 14, -60], [200, 22, 60], [195, 30, 170], [160, 34, 250], [80, 36, 290], [-20, 36, 290],
+      [-110, 34, 260], [-140, 30, 190], [-100, 26, 130], [20, 22, 110], [70, 18, 60], [40, 15, 0],
+      [-60, 12, -20], [-120, 9, -80], [-100, 6, -150], [-20, 4, -200], [80, 2, -250], [160, 2, -260],
+      [200, 6, -190],
+    ],
+    pads: [
+      [17.5, 0, 0], [17.5, 1, 0], [17.5, 2, 0], // the plunger lane: launches you up the return climb
+      [9.4, 0, 'race'], [12.5, 0, -4], [12.5, 1, 4],
+    ],
+    ramps: [[4.5, 10, 1.6], [15.4, 9, 1.5]],
+    itemRows: [1.4, 8.5, 12.5, 16.5],
+    hazards: [
+      // chrome balls rolling back up the table, against the race
+      { type: 'ball', t0: 0.43, t1: 0.70, lat: -4, count: 2, speed: 0.0068, radius: 2.4 },
+      { type: 'ball', t0: 0.43, t1: 0.70, lat: 5, count: 1, speed: 0.0058, radius: 2.4 },
+      // pop bumpers near the edges of the table
+      { type: 'bumper', t: 0.50, lat: -8, color: 0xff3df2 },
+      { type: 'bumper', t: 0.545, lat: 7.5, color: 0x00e5ff },
+      { type: 'bumper', t: 0.60, lat: -6.5, color: 0xffe14d },
+      { type: 'bumper', t: 0.69, lat: 8, color: 0xff3df2 },
+      { type: 'bumper', t: 0.745, lat: -7, color: 0x00e5ff },
+      { type: 'bumper', t: 0.255, lat: 7.5, color: 0xffe14d },
+    ],
+  },
+  {
+    id: 'magma-keep',
+    name: 'Magma Keep',
+    blurb: 'Fortress over lava · crusher blocks, lava bridge jump',
+    theme: 'lava',
+    scale: 1.15,
+    lake: { x: 110, z: -260, r: 95 },
+    points: [
+      [0, 0, -60], [0, 0, 70], [20, 1, 150], [90, 2, 180], [190, 3, 170], [240, 4, 110], [240, 5, 10],
+      [200, 6, -50], [130, 6, -60], [90, 5, -110], [120, 4, -180], [200, 3, -210], [230, 6, -270],
+      [170, 8, -320], [60, 8, -320], [-30, 6, -280], [-55, 3, -210], [-4, 0, -138],
+    ],
+    pads: [[5.5, 0, 'race'], [10.5, 0, -4], [10.5, 0, 4]],
+    ramps: [[12.4, 10, 1.6]],
+    itemRows: [1.3, 4.5, 8.5, 13.5],
+    hazards: [
+      { type: 'crusher', t: 0.205, lat: -5, period: 3.4, phase: 0 },
+      { type: 'crusher', t: 0.228, lat: 5, period: 3.4, phase: 0.5 },
+      { type: 'crusher', t: 0.44, lat: 0, period: 3.0, phase: 0.2 },
+      { type: 'crusher', t: 0.482, lat: -6, period: 3.6, phase: 0.65 },
+      { type: 'crusher', t: 0.915, lat: 4, period: 3.2, phase: 0.35 },
+    ],
+  },
+  {
+    id: 'skyway-cruise',
+    name: 'Skyway Cruise',
+    blurb: 'Floating skyway over a sea of clouds · sweeping climbs, cloud bumpers, jump gaps',
+    theme: 'sky',
+    scale: 1.15,
+    lake: { x: 85, z: -60, r: 700 },
+    points: [
+      [0, 30, -60], [0, 32, 60], [30, 36, 160], [110, 42, 210], [200, 48, 190], [250, 50, 110],
+      [230, 46, 20], [160, 40, -20], [100, 36, -80], [120, 34, -170], [190, 30, -230], [160, 26, -310],
+      [60, 24, -330], [-40, 26, -290], [-55, 28, -225], [-4, 29, -145],
+    ],
+    pads: [[7.4, 0, 'race'], [7.4, 1, 'race'], [13.6, 0, -4], [13.6, 0, 4]],
+    ramps: [[3.5, 10, 1.8], [11.5, 10, 1.7]],
+    itemRows: [1.3, 5.0, 9.5, 13.0],
+    hazards: [
+      { type: 'bumper', style: 'cloud', t: 0.30, lat: 7, radius: 2.0 },
+      { type: 'bumper', style: 'cloud', t: 0.36, lat: -7, radius: 2.0 },
+      { type: 'bumper', style: 'cloud', t: 0.60, lat: 6.5, radius: 2.0 },
+      { type: 'bumper', style: 'cloud', t: 0.80, lat: -6.5, radius: 2.0 },
+      { type: 'bumper', style: 'cloud', t: 0.865, lat: 7, radius: 2.0 },
+    ],
+  },
+);
+
 export const DEFAULT_TRACK = TRACKS[0].id;
+// ROTATE order: the classic first, then the new themed circuits, then the rest
+export const ROTATION = ['palm-cove', 'pinball-palace', 'magma-keep', 'skyway-cruise', 'sunset-speedway', 'frosty-peaks'];
 
 /** Track definition by id (unknown/missing ids fall back to Palm Cove). */
 export function getTrackDef(id) {
@@ -115,6 +246,6 @@ export function getTrackDef(id) {
 
 /** For "rotate": the track used for race number `raceIndex` (0-based). */
 export function rotatingTrackId(raceIndex) {
-  const n = TRACKS.length;
-  return TRACKS[(((raceIndex | 0) % n) + n) % n].id;
+  const n = ROTATION.length;
+  return ROTATION[(((raceIndex | 0) % n) + n) % n];
 }

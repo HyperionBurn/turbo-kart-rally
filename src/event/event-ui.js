@@ -1,7 +1,7 @@
 // Event Mode host UI: lobby/select, settings, prerace, results, leaderboard overlays.
 import { CHARACTERS } from '../config.js';
 import qrcode from 'qrcode-generator';
-import { TRACKS, getTrackDef, rotatingTrackId } from '../tracks.js';
+import { TRACKS, ROTATION, getTrackDef, rotatingTrackId } from '../tracks.js';
 
 const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0').slice(-6);
 
@@ -189,7 +189,7 @@ export class EventUI {
       <div class="ev-settings">
         <h2>RACE SETTINGS</h2>
         <div class="opt-row"><span>Track</span><div>${[...TRACKS.map((t) => [t.id, t.name.toUpperCase()]), ['rotate', 'ROTATE ↻']].map(([id, label]) => `<button data-k="track" data-v="${id}" class="${(s.track || 'rotate') === id ? 'on' : ''}">${label}</button>`).join('')}</div></div>
-        <div class="opt-desc">${(s.track || 'rotate') === 'rotate' ? 'A different circuit every race: ' + TRACKS.map((t) => t.name).join(' → ') + '.' : getTrackDef(s.track).blurb}</div>
+        <div class="opt-desc">${(s.track || 'rotate') === 'rotate' ? 'A different circuit every race: ' + ROTATION.map((id) => getTrackDef(id).name).join(' → ') + '.' : getTrackDef(s.track).blurb}</div>
         <div class="opt-row"><span>Laps</span><div>${[1, 3, 5].map((n) => `<button data-k="laps" data-v="${n}" class="${s.laps === n ? 'on' : ''}">${n}</button>`).join('')}</div></div>
         <div class="opt-desc">How many laps each race lasts.</div>
         <div class="opt-row"><span>Difficulty</span><div>${['easy', 'normal', 'hard'].map((n) => `<button data-k="difficulty" data-v="${n}" class="${s.difficulty === n ? 'on' : ''}">${ccLabel[n]}</button>`).join('')}</div></div>
