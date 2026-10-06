@@ -57,6 +57,7 @@ const PAD_BOOST_TIME = 1.0;
 const TRICK_BOOST_TIME = 0.7;
 const JUMP_BASE_VY = 9.5;
 const JUMP_SPEED_VY = 0.17;
+const DASH_LIFT = 1.4; // dash ramps launch higher (and boost), like the blue ramps in MK8
 
 const _n = new THREE.Vector3();
 
@@ -392,6 +393,7 @@ export class Kart {
     this.onRoad = info.onRoad !== undefined ? !!info.onRoad : this.surface !== 'offroad';
     if (fin(info.t)) this.trackT = ((info.t % 1) + 1) % 1;
     if (fin(info.lateral)) this.lateral = info.lateral;
+    this._rampKind = info.rampKind || null;
   }
 
   _topSpeed() {
@@ -680,9 +682,11 @@ export class Kart {
           this.airTime = 0;
           this._fromRamp = true;
           this._trick = false;
-          this.velocity.y = JUMP_BASE_VY + JUMP_SPEED_VY * nvF;
+          const dash = this._rampKind === 'dash';
+          this.velocity.y = (JUMP_BASE_VY + JUMP_SPEED_VY * nvF) * (dash ? DASH_LIFT : 1);
           pos.y += 0.05;
-          bus.emit('kart:jump', { kart: this });
+          if (dash) this.applyBoost(PAD_BOOST_TIME, 1, 'pad');
+          bus.emit('kart:jump', { kart: this, dash });
         }
       }
     }

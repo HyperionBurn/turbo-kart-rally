@@ -180,6 +180,11 @@ export class AudioEngine {
     on('item:lightning', () => this.zap());
     // track hazards (hazards.js): a heavy stone slam, and a bright pinball-bumper "ding"
     on('hazard:slam', (d) => this.atPos(d.position, 0.9, (g) => { this.thud(g, 60); this._noise(this.ctx.currentTime, 0.25, 0.25 * g, 'lowpass', 400); }));
+    on('hazard:ball', (d) => this.atPos(d.position, d.heavy ? 0.85 : 0.45, (g) => {
+      const t = this.ctx.currentTime;
+      if (d.heavy) { this.thud(g, 75); this._noise(t, 0.18, 0.18 * g, 'lowpass', 600); }
+      else { this._osc('triangle', 520 + Math.random() * 160, t, 0.07, 0.09 * g); this._noise(t, 0.05, 0.08 * g, 'bandpass', 2400, 4); }
+    }));
     on('hazard:bumper', (d) => this.atPos(d.position, 0.7, (g) => { const t = this.ctx.currentTime; this._osc('square', 1568, t, 0.08, 0.1 * g); this._osc('triangle', 2093, t + 0.05, 0.14, 0.08 * g); }));
     on('ui:move', () => this.uiClick(0));
     on('ui:confirm', () => this.uiClick(1));
